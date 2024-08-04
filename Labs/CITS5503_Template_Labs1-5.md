@@ -3,7 +3,7 @@
   <h2>Labs 1-5</h2>
   
   <p>Student ID: 23011392</p>
-  <p>Student Name: [First and Surname]</p>
+  <p>Student Name: Xiaojun Huang</p>
 
 </div>
 
