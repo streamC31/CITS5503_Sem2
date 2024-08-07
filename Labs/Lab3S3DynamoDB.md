@@ -72,6 +72,17 @@ Install jre if not done
 ```
 sudo apt-get install default-jre
 wget https://s3-ap-northeast-1.amazonaws.com/dynamodb-local-tokyo/dynamodb_local_latest.tar.gz
+```
+
+You can use the following command to extract files from dynamodb_local_latest.tar.gz
+
+```
+tar -zxvf dynamodb_local_latest.tar.gz
+```
+
+After the extraction, run the command below
+
+```
 java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar –sharedDb
 ```
 
@@ -79,6 +90,7 @@ Alternatively, you can use docker:
 ```
 docker run -p 8000:8000 amazon/dynamodb-local -jar DynamoDBLocal.jar -inMemory -sharedDb
 ```
+**Note**: Do not close the current window, open a new window to run the following Python script.
 
 Write a Python script to create a table called `CloudFiles` on your local DynamoDB and the attributes for the table are:
 
@@ -97,7 +109,20 @@ Write a Python script to create a table called `CloudFiles` on your local Dynamo
 
 Then, you need to get the attributes above for each file of the S3 bucket and then write the attributes of each file into the created DynamoDB table. Regarding how to get the attributes for a file, refer to this [page](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3/client/get_bucket_acl.html)
 
-**NOTE**: The table should have 2 items. One item corresponds to one file in the bucket and consists of the attributes above and their values. 
+**NOTE**: 
+
+1) The table should have 2 items. One item corresponds to one file in the bucket and consists of the attributes above and their values.
+
+2) Container for the display name of the owner is only supported in the following Amazon Web Services Regions (we used for this unit):
+
+| Region | Region Name |
+| --- | --- |
+| US East (N. Virginia) | us-east-1 |
+| Asia Pacific (Tokyo)	| ap-northeast-1 |
+| Asia Pacific (Singapore) | ap-southeast-1 |
+| Asia Pacific (Sydney)	| ap-southeast-2 |
+
+If you don't use a region in the table above, please output the **container for the ID of the owner** rather than the owner name.
 
 ### [5] Scan the table
 
