@@ -118,8 +118,42 @@ The output:
 
 # Lab 2
 
-<div style="page-break-after: always;"></div>
+## Create an EC2 Instance
 
+### [1] Create a security group
+Type in the command `aws ec2 create-security-group --group-name 23011392-sg --description "security group for development environment"`
+into the terminal of Ubuntu
+- `23011392-sg`: The security group name that AWS created for me.
+- `sg-03d9eeab7a30845e7`: The security group ID I received. 
+
+![img_7.png](img_7.png)
+
+### [2] Authorise inbound traffic for ssh
+
+Type in the command `aws ec2 authorize-security-group-ingress --group-name 23011392-sg --protocol tcp --port 22 --cidr 0.0.0.0/0`
+- `"Return": true`: indicating that authorization was successful;
+- `"SecurityGroupRules":[...]`: With a security group rule ID: "sgr-0b75b60eeee767008".
+![img_8.png](img_8.png)
+
+### [3] Create a key pair
+```
+stream@stream:~$ aws ec2 create-key-pair --key-name 23011392-key --query 'KeyMaterial' --output text > 23011392-key.pem
+
+stream@stream:~$ chmod 400 23011392-key.pem
+```
+
+- `aws ec2 create-key-pair`: The command used to create a new key pair.
+- `--output text > 23011392-key.pem`: Specify the output to be a plain text file and stored in a file named <span style="font-family: Courier;"> 23011392-key.pem </span>
+on my local machine.
+Create a key pair and set a permission after creating, restricting the permissions of the private key file so that only me can read it.
+
+### [4] Create the instance
+Since my student number is between 22984000 and 23370000, the ami_id should be <span style="font-family: Courier;"> ami-0162fe8bfebb6ea16 </span>
+then. 
+```
+ aws ec2 run-instances --image-id ami-0162fe8bfebb6ea16 --security-group-ids 23011392-sg --count 1 --instance-type t2.micro --key-name 23011392-key --query 'Instances[0].InstanceId'
+
+ ```
 # Lab 3
 
 <div style="page-break-after: always;"></div>
