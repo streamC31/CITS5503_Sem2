@@ -319,7 +319,7 @@ sudo apt install docker.io -y
 
 ![img_11.png](img_11.png)
 
-The image illustrates that Docker has been installed in my VM, with the newest versioni(24.0.7)
+The image illustrates that Docker has been installed in my VM, with the newest version(24.0.7)
 
 ### [2] Start Docker
 ```
@@ -331,7 +331,43 @@ sudo systemctl start docker
 sudo systemctl enable docker
 ```
 
-After running previous 3 commands
+After running previous 3 commands, Docker has been successfully installed and enabled on my VM.
+
+
+### [5] Build and run an httpd container 
+
+Create two files according to the lab sheet:
+
+![img_13.png](img_13.png)
+
+
+A permission error raised, try `sudo usermod -a -G docker <username>` and rebuild the docker image using `docker build -t my-apache2 .`: 
+![img_14.png](img_14.png)
+![img_15.png](img_15.png)
+
+Since I am using PyCharm's SSH linking to my VM, I typed `exit` in the terminal to logout of SSH and logged back in using
+`ssh stream@<my_vmserver_ip>`
+
+After that, after running the image using `docker run -p 80:80 -dit --name my-app my-apache2` and open the browser with URL for my VM's IP, the following 
+page has been displayed. 
+![img_16.png](img_16.png)
+
+### [6] Other docker commands
+![img_17.png](img_17.png)
+By running `docker ps -a`, I there are a bunch of information I can gather:
+- Container ID: e3e2cf9c58f8
+- Image: my-apache2
+- Command: The container is running the <span style="font-family: Courier;"> httpd-foreground </span> command
+- Created & Status: The container was created 4 mins ago and has been running for 4 mins.
+- Ports: Port 80 inside the container is mapped to the port 80 on my host machine
+- Names: The container is named my-app
+
+After the container is stopped, the status of it became <span style="font-family: Courier;"> Exited </span>
+![img_18.png](img_18.png)
+
+Same as removing the container, after removing the container it will no longer be listed in the containers.
+![img_19.png](img_19.png)
+
 # Lab 3
 
 <div style="page-break-after: always;"></div>
