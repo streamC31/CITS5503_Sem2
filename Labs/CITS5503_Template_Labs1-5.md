@@ -136,7 +136,7 @@ Type in the command `aws ec2 authorize-security-group-ingress --group-name 23011
 ![img_8.png](img_8.png)
 
 ### [3] Create a key pair
-```
+```bash
 stream@stream:~$ aws ec2 create-key-pair --key-name 23011392-key --query 'KeyMaterial' --output text > 23011392-key.pem
 
 stream@stream:~$ chmod 400 23011392-key.pem
@@ -149,11 +149,189 @@ Create a key pair and set a permission after creating, restricting the permissio
 
 ### [4] Create the instance
 Since my student number is between 22984000 and 23370000, the ami_id should be <span style="font-family: Courier;"> ami-0162fe8bfebb6ea16 </span>
-then. 
-```
- aws ec2 run-instances --image-id ami-0162fe8bfebb6ea16 --security-group-ids 23011392-sg --count 1 --instance-type t2.micro --key-name 23011392-key --query 'Instances[0].InstanceId'
+replace them with my student id and ami-id.
+```bash
+stream@stream:~$ aws ec2 run-instances --image-id ami-0162fe8bfebb6ea16 --security-group-ids 23011392-sg --count 1 --instance-type t2.micro --key-name 23011392-key --query 'Instances[0].InstanceId'
+"i-0734269bd54fd6dd1"
 
  ```
+The output `i-0734269bd54fd6dd1` is my instance ID that will be used in the next section.
+
+### [5] Add a tag to your Instance
+
+ ```
+  aws ec2 create-tags --resources i-0734269bd54fd6dd1 --tags Key=Name,Value=23011392
+ ```
+
+### [6] Get the public IP address
+
+```bash
+stream@stream:~$ aws ec2 describe-instances --instance-ids i-0734269bd54fd6dd1 --query 'Reservations[0].Instances[0].PublicIpAddress'
+"13.231.29.7"
+```
+
+`13.231.29.7` is my public IP address.
+
+### [7] Connect to the instance via ssh
+```bash
+stream@stream:~$ ssh -i 23011392-key.pem ubuntu@13.231.29.7
+The authenticity of host '13.231.29.7 (13.231.29.7)' can't be established.
+ED25519 key fingerprint is SHA256:7NlgchZs5B8sNuMR8hp1ARtf4UQ9Kyplct0tKB8s0z4.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '13.231.29.7' (ED25519) to the list of known hosts.
+Welcome to Ubuntu 22.04.4 LTS (GNU/Linux 6.5.0-1022-aws x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/pro
+
+ System information as of Fri Aug  9 07:35:21 UTC 2024
+
+  System load:  0.0               Processes:             97
+  Usage of /:   20.7% of 7.57GB   Users logged in:       0
+  Memory usage: 21%               IPv4 address for eth0: 172.31.40.211
+  Swap usage:   0%
+
+Expanded Security Maintenance for Applications is not enabled.
+
+0 updates can be applied immediately.
+
+Enable ESM Apps to receive additional future security updates.
+See https://ubuntu.com/esm or run: sudo pro status
+
+
+The list of available updates is more than a week old.
+To check for new updates run: sudo apt update
+
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+To run a command as administrator (user "root"), use "sudo <command>".
+See "man sudo_root" for details.
+
+ubuntu@ip-172-31-40-211:~$ 
+```
+The command takes:
+- `-i 23011392-key.pem`: The private key file to authenticate the ssh connection.
+- `13.231.29.7`: The public IP address of my EC2 instance obtained from the last step.
+
+Besides the welcome message, I also received some system information confirming that I logged into the EC2 instance.
+
+### [8] List the created instance using the AWS console
+
+![img_9.png](img_9.png)
+
+Starting by opening the web browser of AWS Management Console and go to the Instances under the Dashboard.
+
+![img_10.png](img_10.png)
+
+## Create an EC2 instance with Python Boto3
+
+Based on the command line commands in the previous section and the python document of boto3, I found some similar functions in the
+boto3 library that have the same effects as command line.
+```python
+import boto3
+from botocore.exceptions import ClientError
+
+# Create EC2 client based on my region associated with my student number
+ec2 = boto3.client('ec2', region_name='ap-northeast-1')
+
+# Check if security group exists, if not create it
+try:
+    response = ec2.describe_security_groups(GroupNames=['23011392-sg'])
+    security_group_id = response['SecurityGroups'][0]['GroupId']
+    print(f"Using existing security group: {security_group_id}")
+except ClientError as e:
+    if e.response['Error']['Code'] == 'InvalidGroup.NotFound':
+        print("Creating new security group")
+        security_group = ec2.create_security_group(
+            GroupName='23011392-sg',
+            Description='security group for development environment'
+        )
+        security_group_id = security_group['GroupId']
+
+        # Authorize inbound SSH traffic
+        ec2.authorize_security_group_ingress(
+            GroupId=security_group_id,
+            IpProtocol='tcp',
+            FromPort=22,
+            ToPort=22,
+            CidrIp='0.0.0.0/0'
+        )
+    else:
+        raise e
+
+# Check if key pair exists, if not create it
+try:
+    ec2.describe_key_pairs(KeyNames=['23011392-key'])
+    print("Key pair already exists")
+except ClientError as e:
+    if e.response['Error']['Code'] == 'InvalidKeyPair.NotFound':
+        print("Creating new key pair")
+        key_pair = ec2.create_key_pair(KeyName='23011392-key')
+        with open('23011392-key.pem', 'w') as key_file:
+            key_file.write(key_pair['KeyMaterial'])
+    else:
+        raise e
+
+# Create EC2 instance
+instance = ec2.run_instances(
+    ImageId='ami-0162fe8bfebb6ea16',
+    InstanceType='t2.micro',
+    KeyName='23011392-key',
+    SecurityGroupIds=[security_group_id],
+    MinCount=1,
+    MaxCount=1
+)
+
+instance_id = instance['Instances'][0]['InstanceId']
+
+# Add tag to instance
+ec2.create_tags(
+    Resources=[instance_id],
+    Tags=[{'Key': 'Name', 'Value': '23011392'}]
+)
+
+# Get public IP address
+response = ec2.describe_instances(InstanceIds=[instance_id])
+public_ip = response['Reservations'][0]['Instances'][0]['PublicIpAddress']
+
+print(f"Instance created with ID: {instance_id}")
+print(f"Public IP address: {public_ip}")
+```
+
+### Functions I have used:
+- dfd
+- df
+- TODO
+## Use Docker inside a Linux OS
+
+### [1] Install Docker
+```
+sudo apt install docker.io -y
+```
+
+![img_11.png](img_11.png)
+
+The image illustrates that Docker has been installed in my VM, with the newest versioni(24.0.7)
+
+### [2] Start Docker
+```
+sudo systemctl start docker
+```
+
+### [3] Enable Docker
+```
+sudo systemctl enable docker
+```
+
+After running previous 3 commands
 # Lab 3
 
 <div style="page-break-after: always;"></div>

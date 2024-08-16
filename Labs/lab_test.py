@@ -1,17 +1,68 @@
-import pandas as pd
+import boto3
+from botocore.exceptions import ClientError
 
-response = {'Regions': [{'Endpoint': 'ec2.ap-south-1.amazonaws.com', 'RegionName': 'ap-south-1', 'OptInStatus': 'opt-in-not-required'},
-                        {'Endpoint': 'ec2.eu-north-1.amazonaws.com', 'RegionName': 'eu-north-1', 'OptInStatus': 'opt-in-not-required'},
-                        {'Endpoint': 'ec2.eu-west-3.amazonaws.com', 'RegionName': 'eu-west-3', 'OptInStatus': 'opt-in-not-required'},
-                        {'Endpoint': 'ec2.eu-west-2.amazonaws.com', 'RegionName': 'eu-west-2', 'OptInStatus': 'opt-in-not-required'},
-                        {'Endpoint': 'ec2.eu-west-1.amazonaws.com', 'RegionName': 'eu-west-1', 'OptInStatus': 'opt-in-not-required'},
-                        {'Endpoint': 'ec2.ap-northeast-3.amazonaws.com', 'RegionName': 'ap-northeast-3', 'OptInStatus': 'opt-in-not-required'},
-                        {'Endpoint': 'ec2.ap-northeast-2.amazonaws.com', 'RegionName': 'ap-northeast-2', 'OptInStatus': 'opt-in-not-required'},
-                        {'Endpoint': 'ec2.ap-northeast-1.amazonaws.com', 'RegionName': 'ap-northeast-1', 'OptInStatus': 'opt-in-not-required'},
-                        {'Endpoint': 'ec2.ca-central-1.amazonaws.com', 'RegionName': 'ca-central-1', 'OptInStatus': 'opt-in-not-required'}, {'Endpoint': 'ec2.sa-east-1.amazonaws.com', 'RegionName': 'sa-east-1', 'OptInStatus': 'opt-in-not-required'}, {'Endpoint': 'ec2.ap-southeast-1.amazonaws.com', 'RegionName': 'ap-southeast-1', 'OptInStatus': 'opt-in-not-required'}, {'Endpoint': 'ec2.ap-southeast-2.amazonaws.com', 'RegionName': 'ap-southeast-2', 'OptInStatus': 'opt-in-not-required'}, {'Endpoint': 'ec2.eu-central-1.amazonaws.com', 'RegionName': 'eu-central-1', 'OptInStatus': 'opt-in-not-required'}, {'Endpoint': 'ec2.us-east-1.amazonaws.com', 'RegionName': 'us-east-1', 'OptInStatus': 'opt-in-not-required'}, {'Endpoint': 'ec2.us-east-2.amazonaws.com', 'RegionName': 'us-east-2', 'OptInStatus': 'opt-in-not-required'}, {'Endpoint': 'ec2.us-west-1.amazonaws.com', 'RegionName': 'us-west-1', 'OptInStatus': 'opt-in-not-required'}, {'Endpoint': 'ec2.us-west-2.amazonaws.com', 'RegionName': 'us-west-2', 'OptInStatus': 'opt-in-not-required'}], 'ResponseMetadata': {'RequestId': 'bc1c9393-d84a-4690-9570-4bf74af86e52', 'HTTPStatusCode': 200, 'HTTPHeaders': {'x-amzn-requestid': 'bc1c9393-d84a-4690-9570-4bf74af86e52', 'cache-control': 'no-cache, no-store', 'strict-transport-security': 'max-age=31536000; includeSubDomains', 'vary': 'accept-encoding', 'content-type': 'text/xml;charset=UTF-8', 'content-length': '2890', 'date': 'Thu, 01 Aug 2024 03:15:27 GMT', 'server': 'AmazonEC2'}, 'RetryAttempts': 0}}
+# Create EC2 client
+ec2 = boto3.client('ec2', region_name='ap-northeast-1')  # Adjust region if needed
 
-regions = response['Regions']  # Ignore the Metadata since we don't necessarily need them.
+# Check if security group exists, if not create it
+try:
+    response = ec2.describe_security_groups(GroupNames=['23011392-sg'])
+    security_group_id = response['SecurityGroups'][0]['GroupId']
+    print(f"Using existing security group: {security_group_id}")
+except ClientError as e:
+    if e.response['Error']['Code'] == 'InvalidGroup.NotFound':
+        print("Creating new security group")
+        security_group = ec2.create_security_group(
+            GroupName='23011392-sg',
+            Description='security group for development environment'
+        )
+        security_group_id = security_group['GroupId']
 
-df = pd.DataFrame(regions, columns=['Endpoint', 'RegionName'])  # In the Region dict, we only need Endpoint and RegionName as columns.
+        # Authorize inbound SSH traffic
+        ec2.authorize_security_group_ingress(
+            GroupId=security_group_id,
+            IpProtocol='tcp',
+            FromPort=22,
+            ToPort=22,
+            CidrIp='0.0.0.0/0'
+        )
+    else:
+        raise e
 
-print(df)  # Print the tabulated data.
+# Check if key pair exists, if not create it
+try:
+    ec2.describe_key_pairs(KeyNames=['23011392-key'])
+    print("Key pair already exists")
+except ClientError as e:
+    if e.response['Error']['Code'] == 'InvalidKeyPair.NotFound':
+        print("Creating new key pair")
+        key_pair = ec2.create_key_pair(KeyName='23011392-key')
+        with open('23011392-key.pem', 'w') as key_file:
+            key_file.write(key_pair['KeyMaterial'])
+    else:
+        raise e
+
+# Create EC2 instance
+instance = ec2.run_instances(
+    ImageId='ami-0162fe8bfebb6ea16',
+    InstanceType='t2.micro',
+    KeyName='23011392-key',
+    SecurityGroupIds=[security_group_id],
+    MinCount=1,
+    MaxCount=1
+)
+
+instance_id = instance['Instances'][0]['InstanceId']
+
+# Add tag to instance
+ec2.create_tags(
+    Resources=[instance_id],
+    Tags=[{'Key': 'Name', 'Value': '23011392'}]
+)
+
+# Get public IP address
+response = ec2.describe_instances(InstanceIds=[instance_id])
+public_ip = response['Reservations'][0]['Instances'][0]['PublicIpAddress']
+
+print(f"Instance created with ID: {instance_id}")
+print(f"Public IP address: {public_ip}")
