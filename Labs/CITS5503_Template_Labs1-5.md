@@ -382,6 +382,101 @@ Create a file in it with the content `1\n2\n3\n4\n5\n`
 For the subdir and subfile, using the same command as above:
 ![img_22.png](img_22.png)
 
+```python3
+import logging
+import os
+import boto3
+
+from botocore.exceptions import ClientError
+
+
+
+ROOT_DIR = '/home/stream/rootdir'  # My two nested directories are created under my user dir.
+ROOT_S3_DIR = '23011392-cloudstorage'  # The name and the root dir of my bucket.
+
+
+s3 = boto3.client("s3",region_name='ap-southeast-2')
+
+bucket_config = {'LocationConstraint': 'ap-southeast-2'}
+
+# Reference: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/s3-uploading-files.html
+def upload_file(folder_name, file, file_name):
+    print(f"Uploading {file}")
+    try:
+        s3_path = os.path.join(folder_name, file_name).lstrip('./')
+        s3.upload_file(file, ROOT_S3_DIR, s3_path)
+        print(f"Successfully uploaded {file} to {ROOT_S3_DIR}/{s3_path}")
+        return True
+    except ClientError as e:
+        logging.error(e)
+        return False
+
+
+
+def create_bucket_if_not_exists(bucket_name):
+    '''
+    Checks if the bucket exists and creates it if it does not.
+    :param bucket_name: The name of the bucket
+    :return: None
+    '''
+    # Check whether the bucket name exists by listing all the buckets and find in them
+    response = s3.list_buckets()
+    exists = any(bucket['Name'] == bucket_name for bucket in response['Buckets'])  # Return True if exists
+
+    if not exists:
+        print(f"Bucket {bucket_name} does not exist. Creating...")
+        try:
+            s3.create_bucket(Bucket=bucket_name, CreateBucketConfiguration=bucket_config)
+        except ClientError as e:
+            logging.error(e)
+            return False
+        print(f"Successfully created bucket {bucket_name}!")
+        return True
+    print("Bucket exists!")
+
+
+def test_upload(file):
+    try:
+        response = s3.list_objects_v2(Bucket=ROOT_S3_DIR, Prefix=file)
+        for obj in response.get('Contents', []):
+            print(f"Found in bucket: {obj['Key']}")
+            return True
+        print("Did not find.")
+    except ClientError as e:
+        print(f"Error listing objects: {e}")
+        
+# Main program
+
+def main():
+    
+    create_bucket_if_not_exists(ROOT_S3_DIR)
+    
+    # parse directory and upload files
+    for dir_name, subdir_list, file_list in os.walk(ROOT_DIR, topdown=True):
+        print(dir_name, subdir_list, file_list)
+        for fname in file_list:
+            upload_file("%s/" % dir_name[1:], "%s/%s" % (dir_name, fname), fname)
+
+if __name__ == "__main__":
+    main()
+```
+
+In my python script, I have three functions:
+- `create_bucket_if_not_exists(bucket_name)`: This function takes the bucket name we intend to create, starting from
+checking whether the bucket exists and search whether it exists in the list of buckets. If not exists, I use `s3.create_bucket()` 
+function provided in boto3 to create a new bucket.
+- `upload_file()`: It uploads a specific file from the local file system to the corresponding path in the S3 bucket, it takes in
+    - `folder_name`: The local folder where the file is located
+    - `file`: The full path to the file.
+    - `file_name`: The name of the file to be uploaded to S3.
+
+- `test_upload()`: Check if a file was successfully uploaded to the S3 bucket by listing the objects with a specific 
+prefix.
+
+In my main function, I changed the `ROOT_DIR` to the abs location of my `rootdir`, traversing the root directory and upload all the files 
+underneath it to S3 bucket. For success in uploading a message will be printed to the output. 
+
+### [3] Restore from S3
 
 
 # Lab 4

@@ -18,8 +18,8 @@ from botocore.exceptions import ClientError
 # ------------------------------ 
 
 
-ROOT_DIR = 'rootdir'
-ROOT_S3_DIR = '23011392-cloudstorage'
+ROOT_DIR = '/home/stream/rootdir'  # My two nested directories are created under my user dir.
+ROOT_S3_DIR = '23011392-cloudstorage'  # The name and the root dir of my bucket.
 
 
 s3 = boto3.client("s3",region_name='ap-southeast-2')
@@ -80,22 +80,6 @@ def test_upload(file):
 # parse directory and upload files
 
 for dir_name, subdir_list, file_list in os.walk(ROOT_DIR, topdown=True):
-    print(11)
     print(dir_name, subdir_list, file_list)
-    # if dir_name != ROOT_DIR:
-    #     for fname in file_list:
-    #         upload_file("%s/" % dir_name[2:], "%s/%s" % (dir_name, fname), fname)
-
-
-# print("done")
-# test_upload("rootfile.txt")
-#
-# # upload_file("", "rootfile.txt", os.path.basename("rootfile.txt"))
-# try:
-#     s3.delete_object(Bucket=ROOT_S3_DIR, Key="rootfile.txt")
-#     print(f"Successfully deleted.")
-# except ClientError as e:
-#     logging.error(e)
-#     print(f"Failed to delete. Error: {e}")
-#
-# test_upload("rootfile.txt")
+    for fname in file_list:
+        upload_file("%s/" % dir_name[1:], "%s/%s" % (dir_name, fname), fname)
