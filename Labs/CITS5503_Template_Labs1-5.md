@@ -370,7 +370,19 @@ Same as removing the container, after removing the container it will no longer b
 
 # Lab 3
 
-<div style="page-break-after: always;"></div>
+## Program
+
+### [1] Preparation
+Starting by creating a new dir named root dir, I created the `rootdir` dir under my default dir. 
+Create a file in it with the content `1\n2\n3\n4\n5\n`
+
+![img_20.png](img_20.png)
+![img_21.png](img_21.png)
+
+For the subdir and subfile, using the same command as above:
+![img_22.png](img_22.png)
+
+
 
 # Lab 4
 
