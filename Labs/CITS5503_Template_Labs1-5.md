@@ -476,9 +476,182 @@ prefix.
 In my main function, I changed the `ROOT_DIR` to the abs location of my `rootdir`, traversing the root directory and upload all the files 
 underneath it to S3 bucket. For success in uploading a message will be printed to the output. 
 
+![img_23.png](img_23.png)
+
+The images shows that the files in the dirs have been successfully uploaded to my S3 bucket.
 ### [3] Restore from S3
 
+### [4]
+```{'Key': 'home/stream/rootdir/rootfile.txt', 'LastModified': datetime.datetime(2024, 8, 18, 16, 54, 19, tzinfo=tzlocal()), 'ETag': '"f38a850818377e97155d22755caa39d0"', 'Size': 16, 'StorageClass': 'STANDARD'}
 
+{'Key': 'home/stream/rootdir/subdir/subfile.txt', 'LastModified': datetime.datetime(2024, 8, 18, 16, 54, 19, tzinfo=tzlocal()), 'ETag': '"f38a850818377e97155d22755caa39d0"', 'Size': 16, 'StorageClass': 'STANDARD'}
+```
+The files listed under the 'Content' section in the response, from the dict we retrieved we can easily obtain the data we need to write into DynamoDB.
+
+Permission of files need to be retrieved using `get_object_acl()` function:
+```
+{'ResponseMetadata': {'RequestId': 'F9PWB9S8H2TKACXD', 'HostId': '9Vk5cdkiLbA60T9J7/NSdgQa45q6KztmBcjWaDAUfPaEGuzhVa8acEzO/SqnmLuJI+5OXXuvEdFwoHSM6dsxWg==', 'HTTPStatusCode': 200, 'HTTPHeaders': {'x-amz-id-2': '9Vk5cdkiLbA60T9J7/NSdgQa45q6KztmBcjWaDAUfPaEGuzhVa8acEzO/SqnmLuJI+5OXXuvEdFwoHSM6dsxWg==', 'x-amz-request-id': 'F9PWB9S8H2TKACXD', 'date': 'Tue, 20 Aug 2024 04:32:30 GMT', 'content-type': 'application/xml', 'transfer-encoding': 'chunked', 'server': 'AmazonS3'}, 'RetryAttempts': 0}, 'Owner': {'DisplayName': 'zhi.zhang', 'ID': '2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e'}, 'Grants': [{'Grantee': {'DisplayName': 'zhi.zhang', 'ID': '2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e', 'Type': 'CanonicalUser'}, 'Permission': 'FULL_CONTROL'}]}
+{'ResponseMetadata': {'RequestId': 'F9PV47T217TVX6PZ', 'HostId': 'qtDxZ5bdOB+gHp89GO/c9t/eRPn52dDYxqS+m0hi9iZxI/+nUh+l3X5YaoY0BmLGLiymm73ZfjWtBbVnTeo8/w==', 'HTTPStatusCode': 200, 'HTTPHeaders': {'x-amz-id-2': 'qtDxZ5bdOB+gHp89GO/c9t/eRPn52dDYxqS+m0hi9iZxI/+nUh+l3X5YaoY0BmLGLiymm73ZfjWtBbVnTeo8/w==', 'x-amz-request-id': 'F9PV47T217TVX6PZ', 'date': 'Tue, 20 Aug 2024 04:32:30 GMT', 'content-type': 'application/xml', 'transfer-encoding': 'chunked', 'server': 'AmazonS3'}, 'RetryAttempts': 0}, 'Owner': {'DisplayName': 'zhi.zhang', 'ID': '2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e'}, 'Grants': [{'Grantee': {'DisplayName': 'zhi.zhang', 'ID': '2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e', 'Type': 'CanonicalUser'}, 'Permission': 'FULL_CONTROL'}]}
+```
+The last field of the dict is `Permission`, under the `Grant` list.
+
+```python
+import logging
+import time
+
+import boto3
+from botocore.exceptions import ClientError
+
+client = boto3.client('dynamodb')
+s3 = boto3.client('s3', region_name='ap-southeast-2')
+
+BUCKET_NAME = '23011392-cloudstorage'
+
+def create_table():
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dynamodb/client/create_table.html
+    # Create the table based on the method and syntax provided
+    try:
+        # Since DynamoDB only requires the key attrs to be defined in the table schema, the task specified userId and
+        # fileName as keys.
+        response = client.create_table(
+            AttributeDefinitions=[
+                {'AttributeName': 'userId', 'AttributeType': 'S'},
+                {'AttributeName': 'fileName', 'AttributeType': 'S'}
+            ],
+            TableName='CloudFiles',
+            KeySchema=[
+                {'AttributeName': 'userId', 'KeyType': 'HASH'},  # Partition key
+                {'AttributeName': 'fileName', 'KeyType': 'RANGE'}  # Sort key
+            ],
+            ProvisionedThroughput={
+                'ReadCapacityUnits': 123,
+                'WriteCapacityUnits': 123
+            }
+        )
+        print("Successfully create table!")
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logging.info("Table already exists.")
+            return True
+        else:
+            logging.error(f"Unexpected error: {e}")
+            return False
+
+
+def get_file_attr(bucket):
+    # Permission can be obtained using the function get_bucket_acl()
+    # https: // boto3.amazonaws.com / v1 / documentation / api / latest / guide / s3 - example - access - permissions.html
+    try:
+        response = s3.list_objects(Bucket=bucket)
+        files_attrs = []
+
+        if 'Contents' in response:
+            for item in response['Contents']:
+                acl = s3.get_object_acl(Bucket=bucket, Key=item['Key'])
+                permission = (acl['Grants'][0]['Permission'])  # Access the permission field of the file's ACL dictionary under the Grant field
+                attributes = {
+                    'fileName': item['Key'].split('/')[-1] if '/' in item['Key'] else item['Key'],
+                    'path': '/'.join(item['Key'].split('/')[:-1]) if '/' in item['Key'] else '',
+                    'lastUpdated': item['LastModified'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'owner': item['Owner']['DisplayName'],
+                    'permissions': permission
+                }
+                files_attrs.append(attributes)
+            return files_attrs
+    except ClientError as e:
+        logging.error(e)
+        return None
+
+def write_to_dynamodb(item):
+    try:
+        s3 = boto3.client('dynamodb')
+        
+        s3.put_item(
+            TableName='CloudFiles',
+            Item={
+                'userId': {'S': BUCKET_NAME},  # You might want to adjust this
+                'fileName': {'S': item['fileName']},
+                'path': {'S': item['path']},
+                'lastUpdated': {'S': item['lastUpdated']},
+                'owner': {'S': item['owner']},
+                'permissions': {'S': item['permissions']}
+            }
+        )
+        print(f"Successfully wrote {item['fileName']} to DynamoDB")
+        return True
+    except ClientError as e:
+        logging.error(e)
+        return False
+
+
+def main():
+    create_table()
+
+    time.sleep(5)  # Ensuring table has been fully created
+
+    for item in get_file_attr(BUCKET_NAME):
+        write_to_dynamodb(item)
+
+
+if __name__ == "__main__":
+    main()
+```
+## [5]
+By typing into the following command, the table named `CloudFiles` I just created has been scanned, and output a sequence of 
+file information I've written into the DynamoDB, along with their data types.
+```bash
+stream@stream:~/CITS5503_Sem2/Labs/src$ aws dynamodb scan --table-name CloudFiles
+\{
+    "Items": [
+        {
+            "owner": {
+                "S": "zhi.zhang"
+            },
+            "lastUpdated": {
+                "S": "2024-08-18 16:54:19"
+            },
+            "fileName": {
+                "S": "rootfile.txt"
+            },
+            "path": {
+                "S": "home/stream/rootdir"
+            },
+            "userId": {
+                "S": "23011392-cloudstorage"
+            },
+            "permissions": {
+                "S": "FULL_CONTROL"
+            }
+        },
+        {
+            "owner": {
+                "S": "zhi.zhang"
+            },
+            "lastUpdated": {
+                "S": "2024-08-18 16:54:19"
+            },
+            "fileName": {
+                "S": "subfile.txt"
+            },
+            "path": {
+                "S": "home/stream/rootdir/subdir"
+            },
+            "userId": {
+                "S": "23011392-cloudstorage"
+            },
+            "permissions": {
+                "S": "FULL_CONTROL"
+            }
+        }
+    ],
+    "Count": 2,
+    "ScannedCount": 2,
+    "ConsumedCapacity": null
+}
+```
+## [6]
+![img_24.png](img_24.png)
 # Lab 4
 
 <div style="page-break-after: always;"></div>

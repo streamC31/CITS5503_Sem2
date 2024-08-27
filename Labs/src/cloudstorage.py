@@ -61,16 +61,34 @@ def create_bucket_if_not_exists(bucket_name):
         return True
     print("Bucket exists!")
 
+def list_all_objects():
+    try:
+        response = s3.list_objects_v2(Bucket=ROOT_S3_DIR)
+        print("All objects in bucket:")
+        for obj in response.get('Contents', []):
+            print(obj['Key'])
+    except ClientError as e:
+        print(f"Error listing all objects: {e}")
 
 def test_upload(file):
     try:
-        response = s3.list_objects_v2(Bucket=ROOT_S3_DIR, Prefix=file)
-        for obj in response.get('Contents', []):
-            print(f"Found in bucket: {obj['Key']}")
+        # Construct the full S3 path
+        s3_path = os.path.relpath(file, ROOT_DIR).replace(os.sep, '/')
+        print(f"Searching for file: {s3_path}")
+
+        response = s3.list_objects_v2(Bucket=ROOT_S3_DIR, Prefix=s3_path)
+
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                print(f"Found in bucket: {obj['Key']}")
             return True
-        print("Did not find.")
+        else:
+            print(f"Did not find file: {s3_path}")
+            return False
     except ClientError as e:
         print(f"Error listing objects: {e}")
+        return False
+
 # Main program
 # Insert code to create bucket if not there
 
@@ -78,8 +96,8 @@ def test_upload(file):
 # create_bucket_if_not_exists(ROOT_S3_DIR)
 
 # parse directory and upload files
-
-for dir_name, subdir_list, file_list in os.walk(ROOT_DIR, topdown=True):
-    print(dir_name, subdir_list, file_list)
-    for fname in file_list:
-        upload_file("%s/" % dir_name[1:], "%s/%s" % (dir_name, fname), fname)
+if __name__ == "__main__":
+    for dir_name, subdir_list, file_list in os.walk(ROOT_DIR, topdown=True):
+        print(dir_name, subdir_list, file_list)
+        for fname in file_list:
+            upload_file("%s/" % dir_name[1:], "%s/%s" % (dir_name, fname), fname)
