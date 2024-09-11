@@ -382,11 +382,512 @@ Create a file in it with the content `1\n2\n3\n4\n5\n`
 For the subdir and subfile, using the same command as above:
 ![img_22.png](img_22.png)
 
+```python3
+import logging
+import os
+import boto3
+
+from botocore.exceptions import ClientError
 
 
+
+ROOT_DIR = '/home/stream/rootdir'  # My two nested directories are created under my user dir.
+ROOT_S3_DIR = '23011392-cloudstorage'  # The name and the root dir of my bucket.
+
+
+s3 = boto3.client("s3",region_name='ap-southeast-2')
+
+bucket_config = {'LocationConstraint': 'ap-southeast-2'}
+
+# Reference: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/s3-uploading-files.html
+def upload_file(folder_name, file, file_name):
+    print(f"Uploading {file}")
+    try:
+        s3_path = os.path.join(folder_name, file_name).lstrip('./')
+        s3.upload_file(file, ROOT_S3_DIR, s3_path)
+        print(f"Successfully uploaded {file} to {ROOT_S3_DIR}/{s3_path}")
+        return True
+    except ClientError as e:
+        logging.error(e)
+        return False
+
+
+
+def create_bucket_if_not_exists(bucket_name):
+    '''
+    Checks if the bucket exists and creates it if it does not.
+    :param bucket_name: The name of the bucket
+    :return: None
+    '''
+    # Check whether the bucket name exists by listing all the buckets and find in them
+    response = s3.list_buckets()
+    exists = any(bucket['Name'] == bucket_name for bucket in response['Buckets'])  # Return True if exists
+
+    if not exists:
+        print(f"Bucket {bucket_name} does not exist. Creating...")
+        try:
+            s3.create_bucket(Bucket=bucket_name, CreateBucketConfiguration=bucket_config)
+        except ClientError as e:
+            logging.error(e)
+            return False
+        print(f"Successfully created bucket {bucket_name}!")
+        return True
+    print("Bucket exists!")
+
+
+def test_upload(file):
+    try:
+        response = s3.list_objects_v2(Bucket=ROOT_S3_DIR, Prefix=file)
+        for obj in response.get('Contents', []):
+            print(f"Found in bucket: {obj['Key']}")
+            return True
+        print("Did not find.")
+    except ClientError as e:
+        print(f"Error listing objects: {e}")
+        
+# Main program
+
+def main():
+    
+    create_bucket_if_not_exists(ROOT_S3_DIR)
+    
+    # parse directory and upload files
+    for dir_name, subdir_list, file_list in os.walk(ROOT_DIR, topdown=True):
+        print(dir_name, subdir_list, file_list)
+        for fname in file_list:
+            upload_file("%s/" % dir_name[1:], "%s/%s" % (dir_name, fname), fname)
+
+if __name__ == "__main__":
+    main()
+```
+
+In my python script, I have three functions:
+- `create_bucket_if_not_exists(bucket_name)`: This function takes the bucket name we intend to create, starting from
+checking whether the bucket exists and search whether it exists in the list of buckets. If not exists, I use `s3.create_bucket()` 
+function provided in boto3 to create a new bucket.
+- `upload_file()`: It uploads a specific file from the local file system to the corresponding path in the S3 bucket, it takes in
+    - `folder_name`: The local folder where the file is located
+    - `file`: The full path to the file.
+    - `file_name`: The name of the file to be uploaded to S3.
+
+- `test_upload()`: Check if a file was successfully uploaded to the S3 bucket by listing the objects with a specific 
+prefix.
+
+In my main function, I changed the `ROOT_DIR` to the abs location of my `rootdir`, traversing the root directory and upload all the files 
+underneath it to S3 bucket. For success in uploading a message will be printed to the output. 
+
+![img_23.png](img_23.png)
+
+The images shows that the files in the dirs have been successfully uploaded to my S3 bucket.
+### [3] Restore from S3
+
+### [4]
+```{'Key': 'home/stream/rootdir/rootfile.txt', 'LastModified': datetime.datetime(2024, 8, 18, 16, 54, 19, tzinfo=tzlocal()), 'ETag': '"f38a850818377e97155d22755caa39d0"', 'Size': 16, 'StorageClass': 'STANDARD'}
+
+{'Key': 'home/stream/rootdir/subdir/subfile.txt', 'LastModified': datetime.datetime(2024, 8, 18, 16, 54, 19, tzinfo=tzlocal()), 'ETag': '"f38a850818377e97155d22755caa39d0"', 'Size': 16, 'StorageClass': 'STANDARD'}
+```
+The files listed under the 'Content' section in the response, from the dict we retrieved we can easily obtain the data we need to write into DynamoDB.
+
+Permission of files need to be retrieved using `get_object_acl()` function:
+```
+{'ResponseMetadata': {'RequestId': 'F9PWB9S8H2TKACXD', 'HostId': '9Vk5cdkiLbA60T9J7/NSdgQa45q6KztmBcjWaDAUfPaEGuzhVa8acEzO/SqnmLuJI+5OXXuvEdFwoHSM6dsxWg==', 'HTTPStatusCode': 200, 'HTTPHeaders': {'x-amz-id-2': '9Vk5cdkiLbA60T9J7/NSdgQa45q6KztmBcjWaDAUfPaEGuzhVa8acEzO/SqnmLuJI+5OXXuvEdFwoHSM6dsxWg==', 'x-amz-request-id': 'F9PWB9S8H2TKACXD', 'date': 'Tue, 20 Aug 2024 04:32:30 GMT', 'content-type': 'application/xml', 'transfer-encoding': 'chunked', 'server': 'AmazonS3'}, 'RetryAttempts': 0}, 'Owner': {'DisplayName': 'zhi.zhang', 'ID': '2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e'}, 'Grants': [{'Grantee': {'DisplayName': 'zhi.zhang', 'ID': '2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e', 'Type': 'CanonicalUser'}, 'Permission': 'FULL_CONTROL'}]}
+{'ResponseMetadata': {'RequestId': 'F9PV47T217TVX6PZ', 'HostId': 'qtDxZ5bdOB+gHp89GO/c9t/eRPn52dDYxqS+m0hi9iZxI/+nUh+l3X5YaoY0BmLGLiymm73ZfjWtBbVnTeo8/w==', 'HTTPStatusCode': 200, 'HTTPHeaders': {'x-amz-id-2': 'qtDxZ5bdOB+gHp89GO/c9t/eRPn52dDYxqS+m0hi9iZxI/+nUh+l3X5YaoY0BmLGLiymm73ZfjWtBbVnTeo8/w==', 'x-amz-request-id': 'F9PV47T217TVX6PZ', 'date': 'Tue, 20 Aug 2024 04:32:30 GMT', 'content-type': 'application/xml', 'transfer-encoding': 'chunked', 'server': 'AmazonS3'}, 'RetryAttempts': 0}, 'Owner': {'DisplayName': 'zhi.zhang', 'ID': '2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e'}, 'Grants': [{'Grantee': {'DisplayName': 'zhi.zhang', 'ID': '2a5fac7aada1ad2caa48c9ab08cc4e2428d4eb596108daa3b59f1204ae96482e', 'Type': 'CanonicalUser'}, 'Permission': 'FULL_CONTROL'}]}
+```
+The last field of the dict is `Permission`, under the `Grant` list.
+
+```python
+import logging
+import time
+
+import boto3
+from botocore.exceptions import ClientError
+
+client = boto3.client('dynamodb')
+s3 = boto3.client('s3', region_name='ap-southeast-2')
+
+BUCKET_NAME = '23011392-cloudstorage'
+
+def create_table():
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dynamodb/client/create_table.html
+    # Create the table based on the method and syntax provided
+    try:
+        # Since DynamoDB only requires the key attrs to be defined in the table schema, the task specified userId and
+        # fileName as keys.
+        response = client.create_table(
+            AttributeDefinitions=[
+                {'AttributeName': 'userId', 'AttributeType': 'S'},
+                {'AttributeName': 'fileName', 'AttributeType': 'S'}
+            ],
+            TableName='CloudFiles',
+            KeySchema=[
+                {'AttributeName': 'userId', 'KeyType': 'HASH'},  # Partition key
+                {'AttributeName': 'fileName', 'KeyType': 'RANGE'}  # Sort key
+            ],
+            ProvisionedThroughput={
+                'ReadCapacityUnits': 123,
+                'WriteCapacityUnits': 123
+            }
+        )
+        print("Successfully create table!")
+        return True
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'ResourceInUseException':
+            logging.info("Table already exists.")
+            return True
+        else:
+            logging.error(f"Unexpected error: {e}")
+            return False
+
+
+def get_file_attr(bucket):
+    # Permission can be obtained using the function get_bucket_acl()
+    # https: // boto3.amazonaws.com / v1 / documentation / api / latest / guide / s3 - example - access - permissions.html
+    try:
+        response = s3.list_objects(Bucket=bucket)
+        files_attrs = []
+
+        if 'Contents' in response:
+            for item in response['Contents']:
+                acl = s3.get_object_acl(Bucket=bucket, Key=item['Key'])
+                permission = (acl['Grants'][0]['Permission'])  # Access the permission field of the file's ACL dictionary under the Grant field
+                attributes = {
+                    'fileName': item['Key'].split('/')[-1] if '/' in item['Key'] else item['Key'],
+                    'path': '/'.join(item['Key'].split('/')[:-1]) if '/' in item['Key'] else '',
+                    'lastUpdated': item['LastModified'].strftime('%Y-%m-%d %H:%M:%S'),
+                    'owner': item['Owner']['DisplayName'],
+                    'permissions': permission
+                }
+                files_attrs.append(attributes)
+            return files_attrs
+    except ClientError as e:
+        logging.error(e)
+        return None
+
+def write_to_dynamodb(item):
+    try:
+        s3 = boto3.client('dynamodb')
+        
+        s3.put_item(
+            TableName='CloudFiles',
+            Item={
+                'userId': {'S': BUCKET_NAME},  # You might want to adjust this
+                'fileName': {'S': item['fileName']},
+                'path': {'S': item['path']},
+                'lastUpdated': {'S': item['lastUpdated']},
+                'owner': {'S': item['owner']},
+                'permissions': {'S': item['permissions']}
+            }
+        )
+        print(f"Successfully wrote {item['fileName']} to DynamoDB")
+        return True
+    except ClientError as e:
+        logging.error(e)
+        return False
+
+
+def main():
+    create_table()
+
+    time.sleep(5)  # Ensuring table has been fully created
+
+    for item in get_file_attr(BUCKET_NAME):
+        write_to_dynamodb(item)
+
+
+if __name__ == "__main__":
+    main()
+```
+## [5]
+By typing into the following command, the table named `CloudFiles` I just created has been scanned, and output a sequence of 
+file information I've written into the DynamoDB, along with their data types.
+```bash
+stream@stream:~/CITS5503_Sem2/Labs/src$ aws dynamodb scan --table-name CloudFiles
+\{
+    "Items": [
+        {
+            "owner": {
+                "S": "zhi.zhang"
+            },
+            "lastUpdated": {
+                "S": "2024-08-18 16:54:19"
+            },
+            "fileName": {
+                "S": "rootfile.txt"
+            },
+            "path": {
+                "S": "home/stream/rootdir"
+            },
+            "userId": {
+                "S": "23011392-cloudstorage"
+            },
+            "permissions": {
+                "S": "FULL_CONTROL"
+            }
+        },
+        {
+            "owner": {
+                "S": "zhi.zhang"
+            },
+            "lastUpdated": {
+                "S": "2024-08-18 16:54:19"
+            },
+            "fileName": {
+                "S": "subfile.txt"
+            },
+            "path": {
+                "S": "home/stream/rootdir/subdir"
+            },
+            "userId": {
+                "S": "23011392-cloudstorage"
+            },
+            "permissions": {
+                "S": "FULL_CONTROL"
+            }
+        }
+    ],
+    "Count": 2,
+    "ScannedCount": 2,
+    "ConsumedCapacity": null
+}
+```
+## [6]
+![img_24.png](img_24.png)
 # Lab 4
 
-<div style="page-break-after: always;"></div>
+## Apply a policy to restrict permissions on bucket
+
+### [1] Write a Python script
+```python
+import json
+import logging
+
+import boto3
+from botocore.exceptions import ClientError
+
+bucket_name = "23011392-cloudstorage"
+
+policy = {
+  "Version": "2012-10-17",
+  "Statement": {
+   "Sid": "AllowAllS3ActionsInUserFolderForUserOnly",
+    "Effect": "DENY",
+    "Principal": "*",
+    "Action": "s3:*",
+    "Resource": f"arn:aws:s3:::{bucket_name}/folder1/folder2/*",
+    "Condition": {
+      "StringNotLike": {
+          "aws:username":"23011392@student.uwa.edu.au"
+       }
+    }
+  }
+}
+
+def set_policy(bucket_name, policy):
+    """
+    set the policy on an S3 bucket
+    reference: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/s3-example-bucket-policies.html
+    """
+    s3 = boto3.client('s3')
+    policy = json.dumps(policy) # Convert the policy from JSON dict to string
+    try:
+        s3.put_bucket_policy(Bucket=bucket_name, Policy=policy)
+        print(f"Successfully set policy on bucket {bucket_name}")
+        return True
+    except ClientError as e:
+        logging.error(e)
+        print(f"Error setting policy on bucket {bucket_name}: {e}")
+        return False
+
+set_policy(bucket_name=bucket_name, policy=policy)
+```
+
+In the policy of the code, I 
+- deny all S3 actions: `"s3:*"`
+- apply to all principals
+- affect only objs in the path `folder1/folder2/*`
+- include a condition that allows actions only for me
+
+### [2] Check whether the script works
+```bash
+stream@stream:~$ aws s3api get-bucket-policy --bucket 23011392-cloudstorage
+{
+    "Policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"AllowAllS3ActionsInUserFolderForUserOnly\",\"Effect\":\"Deny\",\"Principal\":\"*\",\"Action\":\"s3:*\",\"Resource\":\"arn:aws:s3:::23011392-cloudstorage/folder1/folder2/*\",\"Condition\":{\"StringNotLike\":{\"aws:username\":\"23011392@student.uwa.edu.au\"}}}]}"
+}
+
+```
+
+After I used the AWS CLI command the output displays the policy I associated with my S3 bucket.
+
+Actuallly there is no so-called folder1 or folder2 in my S3 bucket, to test whether the associating policy works, I will set the 
+policy associate to the rootdir and subdir I created in the previous lab.
+
+![img_25.png](img_25.png)![img_26.png](img_26.png)
+
+Same as the content in the AWS console, I found my bucket in the list and clicked on the `Permission` section as saw the bucket policy.
+
+
+By changing the policy and then access it via listing the objects under the `subdir`:
+```bash
+stream@stream:~$ aws s3 ls s3://23011392-cloudstorage/home/stream/rootdir/subdir/
+2024-08-18 16:54:19         16 subfile.txt
+```
+Me myself can access it.
+
+## AES Encryption using KMS
+
+### [1] Create a KMS key and attach a policy to the created KMS key
+
+#### reference:  
+https://docs.aws.amazon.com/kms/latest/APIReference/API_CreateKey.html
+https://docs.aws.amazon.com/kms/latest/APIReference/API_CreateAlias.html
+https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kms/client/create_alias.html
+https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kms/client/put_key_policy.html
+
+
+```python
+import json
+import logging
+import boto3
+from botocore.exceptions import ClientError
+
+student_number = '23011392'
+iam_username = '23011392@student.uwa.edu.au'
+
+key_policy = {
+    "Version": "2012-10-17",
+    "Id": "key-consolepolicy-3",
+    "Statement": [
+        {
+            "Sid": "Enable IAM User Permissions",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::489389878001:root"
+            },
+            "Action": "kms:*",
+            "Resource": "*"
+        },
+        {
+            "Sid": "Allow access for Key Administrators",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": f"arn:aws:iam::489389878001:user/{iam_username}"
+            },
+            "Action": [
+                "kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*",
+                "kms:Update*", "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*",
+                "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion",
+                "kms:CancelKeyDeletion"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "Allow use of the key",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": f"arn:aws:iam::489389878001:user/{iam_username}"
+            },
+            "Action": [
+                "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*",
+                "kms:GenerateDataKey*", "kms:DescribeKey"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "Allow attachment of persistent resources",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": f"arn:aws:iam::489389878001:user/{iam_username}"
+            },
+            "Action": [
+                "kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "Bool": {
+                    "kms:GrantIsForAWSResource": "true"
+                }
+            }
+        }
+    ]
+}
+
+def get_kms_key_id(alias_name):
+    kms = boto3.client('kms', region_name="ap-southeast-2")
+    try:
+        response = kms.describe_key(KeyId=f'alias/{alias_name}')
+        return response['KeyMetadata']['KeyId']
+    except ClientError:
+        return None
+
+def update_key_policy(key_id, policy):
+    """
+    The second part of the first task, since I have already created the key with my student number as
+    an alias, repeatedly creating key to update policy will trigger an AlreadyExistError.
+    So I use this standalone function to update
+    """
+    kms = boto3.client('kms', region_name="ap-southeast-2")
+    try:
+        kms.put_key_policy(
+            KeyId=key_id,
+            PolicyName='default',
+            Policy=json.dumps(policy)
+        )
+        print(f"Policy updated for key: {key_id}")
+    except ClientError as e:
+        logging.error(f"Failed to update policy: {e}")
+
+def create_or_update_KMS_key(student_id):
+    kms = boto3.client('kms', region_name="ap-southeast-2")
+    alias_name = f'alias/{student_id}'
+
+    # Check if the alias already exists
+    existing_key_id = get_kms_key_id(student_id)
+
+    if existing_key_id:
+        print(f"KMS key with alias {alias_name} already exists. Updating policy.")
+        update_key_policy(existing_key_id, key_policy)
+        return existing_key_id, alias_name
+
+    try:
+        response = kms.create_key(
+            Description=f'KMS key for {student_id}',
+            KeyUsage='ENCRYPT_DECRYPT',
+            Policy=json.dumps(key_policy)
+        )
+        key_id = response['KeyMetadata']['KeyId']
+
+        kms.create_alias(
+            AliasName=alias_name,
+            TargetKeyId=key_id
+        )
+        print(f"KMS key created successfully. Key ID: {key_id}")
+        print(f"Alias created: {alias_name}")
+
+        return key_id, alias_name
+    except ClientError as e:
+        logging.error(e)
+        return None, None
+
+# Create or update the KMS key with the student number as the alias
+key_id, alias = create_or_update_KMS_key(student_number)
+
+if key_id and alias:
+    print("KMS key creation/update and alias assignment successful.")
+else:
+    print("Failed to create/update KMS key or assign alias.")
+```
+### [2] Check whether the script works
+1. Starting by logging in to the AWS Management Console;
+2. Navigate to the AWS KMS service;
+3. Under the <span style="font-family: Courier;"> Customer managed keys </span> section I can see the key with my student id and its details.
+![img_27.png](img_27.png)
+
+#### Permission Testing: 
+- In the console I can directly view and edit the key policy, I can also schedule key deletion.
+- Under "Cryptographic configuration" tab, the key usage contains both encrypt and decrypt. 
+- ![img_28.png](img_28.png)
+
+### [3] Use the created KMS key for encryption/decryption
 
 # Lab 5
 

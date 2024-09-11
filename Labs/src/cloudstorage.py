@@ -18,8 +18,8 @@ from botocore.exceptions import ClientError
 # ------------------------------ 
 
 
-ROOT_DIR = 'rootdir'
-ROOT_S3_DIR = '23011392-cloudstorage'
+ROOT_DIR = '/home/stream/rootdir'  # My two nested directories are created under my user dir.
+ROOT_S3_DIR = '23011392-cloudstorage'  # The name and the root dir of my bucket.
 
 
 s3 = boto3.client("s3",region_name='ap-southeast-2')
@@ -61,16 +61,34 @@ def create_bucket_if_not_exists(bucket_name):
         return True
     print("Bucket exists!")
 
+def list_all_objects():
+    try:
+        response = s3.list_objects_v2(Bucket=ROOT_S3_DIR)
+        print("All objects in bucket:")
+        for obj in response.get('Contents', []):
+            print(obj['Key'])
+    except ClientError as e:
+        print(f"Error listing all objects: {e}")
 
 def test_upload(file):
     try:
-        response = s3.list_objects_v2(Bucket=ROOT_S3_DIR, Prefix=file)
-        for obj in response.get('Contents', []):
-            print(f"Found in bucket: {obj['Key']}")
+        # Construct the full S3 path
+        s3_path = os.path.relpath(file, ROOT_DIR).replace(os.sep, '/')
+        print(f"Searching for file: {s3_path}")
+
+        response = s3.list_objects_v2(Bucket=ROOT_S3_DIR, Prefix=s3_path)
+
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                print(f"Found in bucket: {obj['Key']}")
             return True
-        print("Did not find.")
+        else:
+            print(f"Did not find file: {s3_path}")
+            return False
     except ClientError as e:
         print(f"Error listing objects: {e}")
+        return False
+
 # Main program
 # Insert code to create bucket if not there
 
@@ -78,24 +96,8 @@ def test_upload(file):
 # create_bucket_if_not_exists(ROOT_S3_DIR)
 
 # parse directory and upload files
-
-for dir_name, subdir_list, file_list in os.walk(ROOT_DIR, topdown=True):
-    print(11)
-    print(dir_name, subdir_list, file_list)
-    # if dir_name != ROOT_DIR:
-    #     for fname in file_list:
-    #         upload_file("%s/" % dir_name[2:], "%s/%s" % (dir_name, fname), fname)
-
-
-# print("done")
-# test_upload("rootfile.txt")
-#
-# # upload_file("", "rootfile.txt", os.path.basename("rootfile.txt"))
-# try:
-#     s3.delete_object(Bucket=ROOT_S3_DIR, Key="rootfile.txt")
-#     print(f"Successfully deleted.")
-# except ClientError as e:
-#     logging.error(e)
-#     print(f"Failed to delete. Error: {e}")
-#
-# test_upload("rootfile.txt")
+if __name__ == "__main__":
+    for dir_name, subdir_list, file_list in os.walk(ROOT_DIR, topdown=True):
+        print(dir_name, subdir_list, file_list)
+        for fname in file_list:
+            upload_file("%s/" % dir_name[1:], "%s/%s" % (dir_name, fname), fname)
