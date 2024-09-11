@@ -654,7 +654,240 @@ stream@stream:~/CITS5503_Sem2/Labs/src$ aws dynamodb scan --table-name CloudFile
 ![img_24.png](img_24.png)
 # Lab 4
 
-<div style="page-break-after: always;"></div>
+## Apply a policy to restrict permissions on bucket
+
+### [1] Write a Python script
+```python
+import json
+import logging
+
+import boto3
+from botocore.exceptions import ClientError
+
+bucket_name = "23011392-cloudstorage"
+
+policy = {
+  "Version": "2012-10-17",
+  "Statement": {
+   "Sid": "AllowAllS3ActionsInUserFolderForUserOnly",
+    "Effect": "DENY",
+    "Principal": "*",
+    "Action": "s3:*",
+    "Resource": f"arn:aws:s3:::{bucket_name}/folder1/folder2/*",
+    "Condition": {
+      "StringNotLike": {
+          "aws:username":"23011392@student.uwa.edu.au"
+       }
+    }
+  }
+}
+
+def set_policy(bucket_name, policy):
+    """
+    set the policy on an S3 bucket
+    reference: https://boto3.amazonaws.com/v1/documentation/api/latest/guide/s3-example-bucket-policies.html
+    """
+    s3 = boto3.client('s3')
+    policy = json.dumps(policy) # Convert the policy from JSON dict to string
+    try:
+        s3.put_bucket_policy(Bucket=bucket_name, Policy=policy)
+        print(f"Successfully set policy on bucket {bucket_name}")
+        return True
+    except ClientError as e:
+        logging.error(e)
+        print(f"Error setting policy on bucket {bucket_name}: {e}")
+        return False
+
+set_policy(bucket_name=bucket_name, policy=policy)
+```
+
+In the policy of the code, I 
+- deny all S3 actions: `"s3:*"`
+- apply to all principals
+- affect only objs in the path `folder1/folder2/*`
+- include a condition that allows actions only for me
+
+### [2] Check whether the script works
+```bash
+stream@stream:~$ aws s3api get-bucket-policy --bucket 23011392-cloudstorage
+{
+    "Policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"AllowAllS3ActionsInUserFolderForUserOnly\",\"Effect\":\"Deny\",\"Principal\":\"*\",\"Action\":\"s3:*\",\"Resource\":\"arn:aws:s3:::23011392-cloudstorage/folder1/folder2/*\",\"Condition\":{\"StringNotLike\":{\"aws:username\":\"23011392@student.uwa.edu.au\"}}}]}"
+}
+
+```
+
+After I used the AWS CLI command the output displays the policy I associated with my S3 bucket.
+
+Actuallly there is no so-called folder1 or folder2 in my S3 bucket, to test whether the associating policy works, I will set the 
+policy associate to the rootdir and subdir I created in the previous lab.
+
+![img_25.png](img_25.png)![img_26.png](img_26.png)
+
+Same as the content in the AWS console, I found my bucket in the list and clicked on the `Permission` section as saw the bucket policy.
+
+
+By changing the policy and then access it via listing the objects under the `subdir`:
+```bash
+stream@stream:~$ aws s3 ls s3://23011392-cloudstorage/home/stream/rootdir/subdir/
+2024-08-18 16:54:19         16 subfile.txt
+```
+Me myself can access it.
+
+## AES Encryption using KMS
+
+### [1] Create a KMS key and attach a policy to the created KMS key
+
+#### reference:  
+https://docs.aws.amazon.com/kms/latest/APIReference/API_CreateKey.html
+https://docs.aws.amazon.com/kms/latest/APIReference/API_CreateAlias.html
+https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kms/client/create_alias.html
+https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/kms/client/put_key_policy.html
+
+
+```python
+import json
+import logging
+import boto3
+from botocore.exceptions import ClientError
+
+student_number = '23011392'
+iam_username = '23011392@student.uwa.edu.au'
+
+key_policy = {
+    "Version": "2012-10-17",
+    "Id": "key-consolepolicy-3",
+    "Statement": [
+        {
+            "Sid": "Enable IAM User Permissions",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::489389878001:root"
+            },
+            "Action": "kms:*",
+            "Resource": "*"
+        },
+        {
+            "Sid": "Allow access for Key Administrators",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": f"arn:aws:iam::489389878001:user/{iam_username}"
+            },
+            "Action": [
+                "kms:Create*", "kms:Describe*", "kms:Enable*", "kms:List*", "kms:Put*",
+                "kms:Update*", "kms:Revoke*", "kms:Disable*", "kms:Get*", "kms:Delete*",
+                "kms:TagResource", "kms:UntagResource", "kms:ScheduleKeyDeletion",
+                "kms:CancelKeyDeletion"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "Allow use of the key",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": f"arn:aws:iam::489389878001:user/{iam_username}"
+            },
+            "Action": [
+                "kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*",
+                "kms:GenerateDataKey*", "kms:DescribeKey"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "Allow attachment of persistent resources",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": f"arn:aws:iam::489389878001:user/{iam_username}"
+            },
+            "Action": [
+                "kms:CreateGrant", "kms:ListGrants", "kms:RevokeGrant"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "Bool": {
+                    "kms:GrantIsForAWSResource": "true"
+                }
+            }
+        }
+    ]
+}
+
+def get_kms_key_id(alias_name):
+    kms = boto3.client('kms', region_name="ap-southeast-2")
+    try:
+        response = kms.describe_key(KeyId=f'alias/{alias_name}')
+        return response['KeyMetadata']['KeyId']
+    except ClientError:
+        return None
+
+def update_key_policy(key_id, policy):
+    """
+    The second part of the first task, since I have already created the key with my student number as
+    an alias, repeatedly creating key to update policy will trigger an AlreadyExistError.
+    So I use this standalone function to update
+    """
+    kms = boto3.client('kms', region_name="ap-southeast-2")
+    try:
+        kms.put_key_policy(
+            KeyId=key_id,
+            PolicyName='default',
+            Policy=json.dumps(policy)
+        )
+        print(f"Policy updated for key: {key_id}")
+    except ClientError as e:
+        logging.error(f"Failed to update policy: {e}")
+
+def create_or_update_KMS_key(student_id):
+    kms = boto3.client('kms', region_name="ap-southeast-2")
+    alias_name = f'alias/{student_id}'
+
+    # Check if the alias already exists
+    existing_key_id = get_kms_key_id(student_id)
+
+    if existing_key_id:
+        print(f"KMS key with alias {alias_name} already exists. Updating policy.")
+        update_key_policy(existing_key_id, key_policy)
+        return existing_key_id, alias_name
+
+    try:
+        response = kms.create_key(
+            Description=f'KMS key for {student_id}',
+            KeyUsage='ENCRYPT_DECRYPT',
+            Policy=json.dumps(key_policy)
+        )
+        key_id = response['KeyMetadata']['KeyId']
+
+        kms.create_alias(
+            AliasName=alias_name,
+            TargetKeyId=key_id
+        )
+        print(f"KMS key created successfully. Key ID: {key_id}")
+        print(f"Alias created: {alias_name}")
+
+        return key_id, alias_name
+    except ClientError as e:
+        logging.error(e)
+        return None, None
+
+# Create or update the KMS key with the student number as the alias
+key_id, alias = create_or_update_KMS_key(student_number)
+
+if key_id and alias:
+    print("KMS key creation/update and alias assignment successful.")
+else:
+    print("Failed to create/update KMS key or assign alias.")
+```
+### [2] Check whether the script works
+1. Starting by logging in to the AWS Management Console;
+2. Navigate to the AWS KMS service;
+3. Under the <span style="font-family: Courier;"> Customer managed keys </span> section I can see the key with my student id and its details.
+![img_27.png](img_27.png)
+
+#### Permission Testing: 
+- In the console I can directly view and edit the key policy, I can also schedule key deletion.
+- Under "Cryptographic configuration" tab, the key usage contains both encrypt and decrypt. 
+- ![img_28.png](img_28.png)
+
+### [3] Use the created KMS key for encryption/decryption
 
 # Lab 5
 
