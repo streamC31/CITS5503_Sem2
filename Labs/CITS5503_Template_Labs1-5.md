@@ -305,11 +305,6 @@ public_ip = response['Reservations'][0]['Instances'][0]['PublicIpAddress']
 print(f"Instance created with ID: {instance_id}")
 print(f"Public IP address: {public_ip}")
 ```
-
-### Functions I have used:
-- dfd
-- df
-- TODO
 ## Use Docker inside a Linux OS
 
 ### [1] Install Docker
@@ -1000,7 +995,139 @@ if __name__ == '__main__':
 ```
 ![img_29.png](img_29.png)![img_30.png](img_30.png)
 In my python script, I used function `get_kms_id()` to retrieve the KMS key using the alias. 
-I encrypted/decrypted files in my bucket by downloading them locally. At my local side, I add the suffix `.encrypted` / `.decrypted` to 
-the file that I want to encrypt/decrypt
+I encrypted/decrypted files in my bucket by downloading them locally. At my local side, I add the suffix `.encrypted` / `.decrypted` to indicate
+the file that I want to encrypt/decrypt.
+
+### [4] Apply `pycryptodome` for encryption/decryption
+
+```python
+import logging
+import os
+import struct
+from Crypto.Cipher import AES
+from Crypto import Random
+import boto3
+import hashlib
+from botocore.exceptions import ClientError
+
+
+BLOCK_SIZE = 16
+CHUNK_SIZE = 64 * 1024
+
+s3 = boto3.client('s3', region_name="ap-southeast-2")
+bucket_name = '23011392-cloudstorage'
+
+password = 'kitty and the kat'
+
+def encrypt_file(password, in_filename, out_filename):
+    key = hashlib.sha256(password.encode("utf-8")).digest()
+    iv = Random.new().read(AES.block_size)
+    encryptor = AES.new(key, AES.MODE_CBC, iv)
+    filesize = os.path.getsize(in_filename)
+
+    with open(in_filename, 'rb') as infile:
+        with open(out_filename, 'wb') as outfile:
+            outfile.write(struct.pack('<Q', filesize))
+            outfile.write(iv)
+
+            while True:
+                chunk = infile.read(CHUNK_SIZE)
+                if len(chunk) == 0:
+                    break
+                elif len(chunk) % 16 != 0:
+                    chunk += b' ' * (16 - len(chunk) % 16)
+
+                outfile.write(encryptor.encrypt(chunk))
+
+def decrypt_file(password, in_filename, out_filename):
+    key = hashlib.sha256(password.encode("utf-8")).digest()
+
+    with open(in_filename, 'rb') as infile:
+        origsize = struct.unpack('<Q', infile.read(struct.calcsize('Q')))[0]
+        iv = infile.read(16)
+        decryptor = AES.new(key, AES.MODE_CBC, iv)
+
+        with open(out_filename, 'wb') as outfile:
+            while True:
+                chunk = infile.read(CHUNK_SIZE)
+                if len(chunk) == 0:
+                    break
+                outfile.write(decryptor.decrypt(chunk))
+
+            outfile.truncate(origsize)
+
+def process_s3_files():
+    try:
+        response = s3.list_objects_v2(Bucket=bucket_name)
+        if 'Contents' not in response:
+            print("No objects found in the bucket.")
+            return
+
+        for obj in response['Contents']:
+            file_key = obj['Key']
+            if file_key.endswith('.encrypted') or file_key.endswith('.decrypted'):
+                continue  # Skip already processed files
+
+            local_file_path = os.path.join('/', file_key)
+
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+
+            # Download the file
+            s3.download_file(bucket_name, file_key, local_file_path)
+            print(f"Downloaded: {local_file_path}")
+
+            # Encrypt the file
+            encrypted_file_path = f"{local_file_path}.encrypted"
+            encrypt_file(password, local_file_path, encrypted_file_path)
+            encrypted_key = f"{file_key}.encrypted"
+            s3.upload_file(encrypted_file_path, bucket_name, encrypted_key)
+            print(f"Uploaded encrypted file: {encrypted_key}")
+
+            # Decrypt the file
+            decrypted_file_path = f"{local_file_path}.decrypted"
+            decrypt_file(password, encrypted_file_path, decrypted_file_path)
+            decrypted_key = f"{file_key}.decrypted"
+            s3.upload_file(decrypted_file_path, bucket_name, decrypted_key)
+            print(f"Uploaded decrypted file: {decrypted_key}")
+
+            # Clean up local files
+            for path in [local_file_path, encrypted_file_path, decrypted_file_path]:
+                if path and os.path.exists(path):
+                    os.remove(path)
+
+    except ClientError as e:
+        logging.error(f"Error processing S3 files: {e}")
+
+if __name__ == '__main__':
+    process_s3_files()
+```
+
+From the `fileencrypt.py`, I derived two functions that manually encrypt and decrypt file. From the code, in the `process_s3_file()` function, I downloaded
+the file I want to encrypt/decrypt from my Amazon S3 bucket to my local dir. Then I call these functions to encrypt/decrypt files from the
+bucket, and upload back to the bucket in their original paths.
+
+
+![img_31.png](img_31.png) ![img_32.png](img_32.png)
+Delete relevant bucket.
+
+![img_33.png](img_33.png)
+Schedule deletion for KMS.
+
+The differences between custom solution and KMS have multiple factors to consider:
+- Key Management: KMS has a more robust key management system with automatic key rotation, auditing, and access controls. However, in a custom
+solution, key management is our responsibility, the complexity increases as the scale increases.
+- Cost: In KMS, we need to pay for API calls for key storage, which can be costly for overhead operations. In custom solution, there is no direct
+cost for encryption operations. The only cost related is the computational performance of the hardware.
+- Security: KMS is managed by AWS, that adheres to compliance standards, and provides additional security features. Meanwhile, the
+custom solution is potentially more vulnerable, depending on the implementation.
+- Flexibility: KMS is more restricted in terms of customization, because it follows AWS standards and rules, limiting control over
+certain algorithms or key management. For the custom solution, we create and maintain the encryption by ourselves, that is, we can design
+the encryption process as my specific requirements. 
+- Latency: Since KMS is using AWS online services, the latency will be determined by multiple external factors. A custom solution has lower latency, especially
+deploying on the same infrastructure as the application.
+- For smaller file size, the custom solution might have a better performance due to less overhead. For larger file size, KMS might perform better due to
+hardware acceleration.
+
 # Lab 5
 
