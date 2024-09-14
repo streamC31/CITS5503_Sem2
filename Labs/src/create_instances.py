@@ -5,15 +5,12 @@ import time
 from botocore.exceptions import ClientError
 
 
-'''Write a Python Boto3 script to create 2 EC2 instances in two different availability zones (name the instances following the
- format: \<student number\>-vm1 and \<student number\>-vm2) in the region mapped to your student number. In this script,
- a security group should be created to authorise inbound traffic for HTTP and SSH, which will be used by the following steps.'''
-
 STUDENT_NUMBER = '23011392'
 
 REGION = 'ap-southeast-2'
 
 ec2 = boto3.client('ec2', region_name=REGION)
+client = boto3.client('elbv2')
 
 def create_security_group():
     try:
@@ -75,6 +72,8 @@ def create_ec2_instance(instance_name, availability_zone, security_group_id):
         logging.error(e)
         return None
 
+def create_load_balancer(security_group_id, subnet):
+    pass
 
 def main():
     security_group_id = create_security_group()
