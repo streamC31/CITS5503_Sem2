@@ -1130,4 +1130,139 @@ deploying on the same infrastructure as the application.
 hardware acceleration.
 
 # Lab 5
+## Networking
 
+
+### [1] Turn off a specific VM you want to configure.
+I am using VMWare as my Virtual Machine. Starting by powering off my VM machine.
+### [2] In the VirtualBox Manager, select the VM, click `Settings` and then `Network`. Choose Adapter 1 that should have been configured as NAT. Click on `Advanced` and then `Port Forwarding`. Set up 1 rule:
+   Use the host IP 127.0.0.1 and host port 2222 and map that to Guest Port 22
+Right click on the VM I want to configure and there is a `Network Adaptor` section in the **Settings** window
+![img_34.png](img_34.png) 
+
+### [3] You can test the NAT'd port by seeing if you can access it from your host OS. Enable SSH to the VM by installing **sshd** as follows:
+
+```
+sudo apt install tasksel
+sudo tasksel install openssh-server
+```
+
+start the ssh service by:
+
+```
+sudo service ssh start
+```
+
+you can stop it using:
+
+```
+ sudo service ssh stop
+ ```
+
+To SSH to the VM, open a terminal on your host OS (or use Putty from Windows) and SSH as
+
+```
+ssh -p 2222 <usermame>@127.0.0.1
+```
+
+You should be prompted for your password
+### [1] Create 2 EC2 instances
+Same as the previous lab sheet, I created ec2 instances using function `ec2.run_instances()`. For different availability zones
+requirement, I used function `ec2.describe_availability_zones()` to access all the availability zones for my ec2 instances. And add
+the availability zone as a field into the `ec2.run_instances()` function, so that I managed to create instances in different zones.
+### [2] Create an Application Load Balancer
+
+```python
+import logging
+
+import boto3
+import time
+from botocore.exceptions import ClientError
+
+
+'''Write a Python Boto3 script to create 2 EC2 instances in two different availability zones (name the instances following the
+ format: \<student number\>-vm1 and \<student number\>-vm2) in the region mapped to your student number. In this script,
+ a security group should be created to authorise inbound traffic for HTTP and SSH, which will be used by the following steps.'''
+
+STUDENT_NUMBER = '23011392'
+
+REGION = 'ap-southeast-2'
+
+ec2 = boto3.client('ec2', region_name=REGION)
+
+def create_security_group():
+    try:
+        security_group = ec2.create_security_group(
+            GroupName=f'{STUDENT_NUMBER}-security_group0-{int(time.time())}',
+            Description='Security group to authorize inbound traffic for HTTP and SSH'
+        )
+        security_group_id = security_group['GroupId']  # Access the group ID
+
+        ec2.authorize_security_group_ingress(
+            GroupId=security_group_id,
+            IpPermissions=[
+                {
+                    'IpProtocol': 'tcp',
+                    'FromPort': 80,
+                    'ToPort': 80,
+                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                },
+                {
+                    'IpProtocol': 'tcp',
+                    'FromPort': 22,
+                    'ToPort': 22,
+                    'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
+                }
+            ]
+        )
+
+        print(f"Security group created with ID: {security_group_id}")
+        return security_group_id
+    except ClientError as e:
+        logging.error(e)
+        return None
+
+def create_ec2_instance(instance_name, availability_zone, security_group_id):
+    try:
+        response = ec2.run_instances(
+            ImageId='ami-0310483fb2b488153',  # ap-southeast-2
+            InstanceType='t2.micro',
+            MinCount=1,
+            MaxCount=1,
+            SecurityGroupIds=[security_group_id],
+            Placement={'AvailabilityZone': availability_zone},
+            TagSpecifications=[
+                {
+                    'ResourceType': 'instance',
+                    'Tags': [
+                        {
+                            'Key': 'Name',
+                            'Value': instance_name
+                        },
+                    ]
+                },
+            ]
+        )
+        instance_id = response['Instances'][0]['InstanceId']
+        print(f"Instance {instance_name} created with ID: {instance_id} in {availability_zone}")
+        return instance_id
+    except ClientError as e:
+        logging.error(e)
+        return None
+
+
+def main():
+    security_group_id = create_security_group()
+    if not security_group_id:
+        return
+
+    response = ec2.describe_availability_zones()
+    availability_zones = [zone['ZoneName'] for zone in response['AvailabilityZones']]
+
+    # Create instances in different availability zones
+    create_ec2_instance(f'{STUDENT_NUMBER}-vm1', availability_zones[0], security_group_id)
+    create_ec2_instance(f'{STUDENT_NUMBER}-vm2', availability_zones[1], security_group_id)
+
+if __name__ == "__main__":
+    main()
+```
