@@ -10,8 +10,17 @@ STUDENT_NUMBER = '23011392'
 REGION = 'ap-southeast-2'
 
 ec2 = boto3.client('ec2', region_name=REGION)
-client = boto3.client('elbv2')
+client = boto3.client('elbv2', region_name=REGION)
 
+def wait_for_instance(instance_id):
+    """ Ensuring the instances are running so that we can do further manipulation to it"""
+    try:
+        print(f"Waiting for instance {instance_id} to enter 'running' state...")
+        waiter = ec2.get_waiter('instance_running')
+        waiter.wait(InstanceIds=[instance_id])
+        print(f"Instance {instance_id} is now running.")
+    except ClientError as e:
+        logging.error(e)
 def create_security_group():
     try:
         security_group = ec2.create_security_group(
@@ -76,7 +85,7 @@ def create_load_balancer(security_group_id, subnets):
     # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/elbv2/client/create_load_balancer.html
     try:
         response = client.create_load_balancer(
-            Name=f'{STUDENT_NUMBER}-lb',
+            Name=f'{STUDENT_NUMBER}-lb-{int(time.time())}',
             Subnets=subnets,
             SecurityGroups=[security_group_id],
             Scheme='internet-facing',
@@ -90,6 +99,55 @@ def create_load_balancer(security_group_id, subnets):
         logging.error(e)
         return None
 
+def create_target_group(vpc_id):
+    try:
+        response = client.create_target_group(
+            Name=f'{STUDENT_NUMBER}-tg-{int(time.time())}',
+            Protocol='HTTP',
+            Port=80,
+            VpcId=vpc_id,
+            TargetType='instance'
+        )
+
+        target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
+        print(f"Target group created with ARN: {target_group_arn}")
+        return target_group_arn
+
+    except ClientError as e:
+        logging.error(e)
+        return None
+
+def register_targets(target_group_arn, instance_ids):
+    try:
+        targets = [{'Id': instance_id} for instance_id in instance_ids]
+        response = client.register_targets(
+            TargetGroupArn=target_group_arn,
+            Targets=targets
+        )
+        print(f"Instances {instance_ids} registered to target group {target_group_arn}")
+    except ClientError as e:
+        logging.error(e)
+
+def create_listener(load_balancer_arn, target_group_arn):
+    try:
+        response = client.create_listener(
+            LoadBalancerArn=load_balancer_arn,
+            Protocol='HTTP',
+            Port=80,
+            DefaultActions=[
+                {
+                    'Type': 'forward',
+                    'TargetGroupArn': target_group_arn
+                }
+            ]
+        )
+        listener_arn = response['Listeners'][0]['ListenerArn']
+        print(f"Listener created with ARN: {listener_arn}")
+        return listener_arn
+    except ClientError as e:
+        logging.error(e)
+        return None
+
 def main():
     security_group_id = create_security_group()
     if not security_group_id:
@@ -99,10 +157,41 @@ def main():
     availability_zones = [zone['ZoneName'] for zone in response['AvailabilityZones']]
 
     # Create instances in different availability zones
-    create_ec2_instance(f'{STUDENT_NUMBER}-vm1', availability_zones[0], security_group_id)
-    create_ec2_instance(f'{STUDENT_NUMBER}-vm2', availability_zones[1], security_group_id)
+    instance1 = create_ec2_instance(f'{STUDENT_NUMBER}-vm1', availability_zones[0], security_group_id)
+    instance2 = create_ec2_instance(f'{STUDENT_NUMBER}-vm2', availability_zones[1], security_group_id)
 
-    # Get subnet ID by using
+    wait_for_instance(instance1)
+    wait_for_instance(instance2)
+
+    if not instance1 and instance2:
+        return
+
+    # Get subnet ID by using function describe_subnet in ec2
+    response = ec2.describe_subnets()
+    subnets = [subnet['SubnetId'] for subnet in response['Subnets'][:2]]  # Use the first two subnets
+    vpc_id = response['Subnets'][0]['VpcId']
+    if len(subnets) < 2:
+        print("Error: Not enough subnets available to create a load balancer.")
+        return
+
+    # Create a load balancer using the security group and subnets
+    lb_arn = create_load_balancer(security_group_id, subnets)
+
+    if not lb_arn:
+
+        return
+    # Create a target group in the same VPC as the EC2 instances
+    target_group_arn = create_target_group(vpc_id)
+
+    if not target_group_arn:
+        print("Error: Failed to create target group.")
+        return
+
+    register_targets(target_group_arn, [instance1, instance2])
+    listener_arn = create_listener(lb_arn, target_group_arn)
+    if not listener_arn:
+        print("Error: Failed to create listener.")
+        return
 
 
 if __name__ == "__main__":

@@ -1130,48 +1130,13 @@ deploying on the same infrastructure as the application.
 hardware acceleration.
 
 # Lab 5
-## Networking
-
-
-### [1] Turn off a specific VM you want to configure.
-I am using VMWare as my Virtual Machine. Starting by powering off my VM machine.
-### [2] In the VirtualBox Manager, select the VM, click `Settings` and then `Network`. Choose Adapter 1 that should have been configured as NAT. Click on `Advanced` and then `Port Forwarding`. Set up 1 rule:
-   Use the host IP 127.0.0.1 and host port 2222 and map that to Guest Port 22
-Right click on the VM I want to configure and there is a `Network Adaptor` section in the **Settings** window
-![img_34.png](img_34.png) 
-
-### [3] You can test the NAT'd port by seeing if you can access it from your host OS. Enable SSH to the VM by installing **sshd** as follows:
-
-```
-sudo apt install tasksel
-sudo tasksel install openssh-server
-```
-
-start the ssh service by:
-
-```
-sudo service ssh start
-```
-
-you can stop it using:
-
-```
- sudo service ssh stop
- ```
-
-To SSH to the VM, open a terminal on your host OS (or use Putty from Windows) and SSH as
-
-```
-ssh -p 2222 <usermame>@127.0.0.1
-```
-
-You should be prompted for your password
 ### [1] Create 2 EC2 instances
 Same as the previous lab sheet, I created ec2 instances using function `ec2.run_instances()`. For different availability zones
 requirement, I used function `ec2.describe_availability_zones()` to access all the availability zones for my ec2 instances. And add
 the availability zone as a field into the `ec2.run_instances()` function, so that I managed to create instances in different zones.
 ### [2] Create an Application Load Balancer
-
+Differ from the first task, I used function called `wait_for_instance()` to wait for EC2 instances to enter 'running' state. Because I found
+that the program will stop if I do not proper wait for instance before I create listener to the load balancer.
 ```python
 import logging
 
@@ -1180,16 +1145,22 @@ import time
 from botocore.exceptions import ClientError
 
 
-'''Write a Python Boto3 script to create 2 EC2 instances in two different availability zones (name the instances following the
- format: \<student number\>-vm1 and \<student number\>-vm2) in the region mapped to your student number. In this script,
- a security group should be created to authorise inbound traffic for HTTP and SSH, which will be used by the following steps.'''
-
 STUDENT_NUMBER = '23011392'
 
 REGION = 'ap-southeast-2'
 
 ec2 = boto3.client('ec2', region_name=REGION)
+client = boto3.client('elbv2', region_name=REGION)
 
+def wait_for_instance(instance_id):
+    """ Ensuring the instances are running so that we can do further manipulation to it"""
+    try:
+        print(f"Waiting for instance {instance_id} to enter 'running' state...")
+        waiter = ec2.get_waiter('instance_running')
+        waiter.wait(InstanceIds=[instance_id])
+        print(f"Instance {instance_id} is now running.")
+    except ClientError as e:
+        logging.error(e)
 def create_security_group():
     try:
         security_group = ec2.create_security_group(
@@ -1250,6 +1221,72 @@ def create_ec2_instance(instance_name, availability_zone, security_group_id):
         logging.error(e)
         return None
 
+def create_load_balancer(security_group_id, subnets):
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/elbv2/client/create_load_balancer.html
+    try:
+        response = client.create_load_balancer(
+            Name=f'{STUDENT_NUMBER}-lb-{int(time.time())}',
+            Subnets=subnets,
+            SecurityGroups=[security_group_id],
+            Scheme='internet-facing',
+            IpAddressType='ipv4'
+        )
+
+        load_balancer_arn = response['LoadBalancers'][0]['LoadBalancerArn']
+        print(f"Application Load Balancer created with ARN: {load_balancer_arn}")
+        return load_balancer_arn
+    except ClientError as e:
+        logging.error(e)
+        return None
+
+def create_target_group(vpc_id):
+    try:
+        response = client.create_target_group(
+            Name=f'{STUDENT_NUMBER}-tg-{int(time.time())}',
+            Protocol='HTTP',
+            Port=80,
+            VpcId=vpc_id,
+            TargetType='instance'
+        )
+
+        target_group_arn = response['TargetGroups'][0]['TargetGroupArn']
+        print(f"Target group created with ARN: {target_group_arn}")
+        return target_group_arn
+
+    except ClientError as e:
+        logging.error(e)
+        return None
+
+def register_targets(target_group_arn, instance_ids):
+    try:
+        targets = [{'Id': instance_id} for instance_id in instance_ids]
+        response = client.register_targets(
+            TargetGroupArn=target_group_arn,
+            Targets=targets
+        )
+        print(f"Instances {instance_ids} registered to target group {target_group_arn}")
+    except ClientError as e:
+        logging.error(e)
+
+def create_listener(load_balancer_arn, target_group_arn):
+    try:
+        response = client.create_listener(
+            LoadBalancerArn=load_balancer_arn,
+            Protocol='HTTP',
+            Port=80,
+            DefaultActions=[
+                {
+                    'Type': 'forward',
+                    'TargetGroupArn': target_group_arn
+                }
+            ]
+        )
+        listener_arn = response['Listeners'][0]['ListenerArn']
+        print(f"Listener created with ARN: {listener_arn}")
+        return listener_arn
+    except ClientError as e:
+        logging.error(e)
+        return None
 
 def main():
     security_group_id = create_security_group()
@@ -1260,9 +1297,48 @@ def main():
     availability_zones = [zone['ZoneName'] for zone in response['AvailabilityZones']]
 
     # Create instances in different availability zones
-    create_ec2_instance(f'{STUDENT_NUMBER}-vm1', availability_zones[0], security_group_id)
-    create_ec2_instance(f'{STUDENT_NUMBER}-vm2', availability_zones[1], security_group_id)
+    instance1 = create_ec2_instance(f'{STUDENT_NUMBER}-vm1', availability_zones[0], security_group_id)
+    instance2 = create_ec2_instance(f'{STUDENT_NUMBER}-vm2', availability_zones[1], security_group_id)
+
+    wait_for_instance(instance1)
+    wait_for_instance(instance2)
+
+    if not instance1 and instance2:
+        return
+
+    # Get subnet ID by using function describe_subnet in ec2
+    response = ec2.describe_subnets()
+    subnets = [subnet['SubnetId'] for subnet in response['Subnets'][:2]]  # Use the first two subnets
+    vpc_id = response['Subnets'][0]['VpcId']
+    if len(subnets) < 2:
+        print("Error: Not enough subnets available to create a load balancer.")
+        return
+
+    # Create a load balancer using the security group and subnets
+    lb_arn = create_load_balancer(security_group_id, subnets)
+
+    if not lb_arn:
+
+        return
+    # Create a target group in the same VPC as the EC2 instances
+    target_group_arn = create_target_group(vpc_id)
+
+    if not target_group_arn:
+        print("Error: Failed to create target group.")
+        return
+
+    register_targets(target_group_arn, [instance1, instance2])
+    listener_arn = create_listener(lb_arn, target_group_arn)
+    if not listener_arn:
+        print("Error: Failed to create listener.")
+        return
+
 
 if __name__ == "__main__":
     main()
 ```
+
+
+### [3]
+Starting from ssh-ing two instances:
+
