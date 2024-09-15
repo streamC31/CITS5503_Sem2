@@ -72,8 +72,23 @@ def create_ec2_instance(instance_name, availability_zone, security_group_id):
         logging.error(e)
         return None
 
-def create_load_balancer(security_group_id, subnet):
-    pass
+def create_load_balancer(security_group_id, subnets):
+    # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/elbv2/client/create_load_balancer.html
+    try:
+        response = client.create_load_balancer(
+            Name=f'{STUDENT_NUMBER}-lb',
+            Subnets=subnets,
+            SecurityGroups=[security_group_id],
+            Scheme='internet-facing',
+            IpAddressType='ipv4'
+        )
+
+        load_balancer_arn = response['LoadBalancers'][0]['LoadBalancerArn']
+        print(f"Application Load Balancer created with ARN: {load_balancer_arn}")
+        return load_balancer_arn
+    except ClientError as e:
+        logging.error(e)
+        return None
 
 def main():
     security_group_id = create_security_group()
@@ -86,6 +101,8 @@ def main():
     # Create instances in different availability zones
     create_ec2_instance(f'{STUDENT_NUMBER}-vm1', availability_zones[0], security_group_id)
     create_ec2_instance(f'{STUDENT_NUMBER}-vm2', availability_zones[1], security_group_id)
+
+    # Get subnet ID by using
 
 
 if __name__ == "__main__":
