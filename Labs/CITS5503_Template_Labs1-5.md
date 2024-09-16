@@ -1341,4 +1341,4 @@ if __name__ == "__main__":
 
 ### [3]
 Starting from ssh-ing two instances:
-
+- From the AWS console, accessing two instances' public IP addresses. 
