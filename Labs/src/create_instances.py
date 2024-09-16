@@ -7,7 +7,7 @@ from botocore.exceptions import ClientError
 
 STUDENT_NUMBER = '23011392'
 
-REGION = 'ap-southeast-2'
+REGION = 'ap-northeast-1'
 
 ec2 = boto3.client('ec2', region_name=REGION)
 client = boto3.client('elbv2', region_name=REGION)
@@ -56,10 +56,11 @@ def create_security_group():
 def create_ec2_instance(instance_name, availability_zone, security_group_id):
     try:
         response = ec2.run_instances(
-            ImageId='ami-0310483fb2b488153',  # ap-southeast-2
+            ImageId='ami-0c6359fd9eb30edcf',  # ap-northeast-1
             InstanceType='t2.micro',
             MinCount=1,
             MaxCount=1,
+            KeyName='23011392-key', # Already created in previous labs
             SecurityGroupIds=[security_group_id],
             Placement={'AvailabilityZone': availability_zone},
             TagSpecifications=[

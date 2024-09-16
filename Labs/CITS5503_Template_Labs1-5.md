@@ -1342,3 +1342,9 @@ if __name__ == "__main__":
 ### [3]
 Starting from ssh-ing two instances:
 - From the AWS console, accessing two instances' public IP addresses. 
+- Find my key file, which is located in `/home/stream/23011392-key.pem`
+- ssh my instances by typing following commands `ssh -i <KEY_FILE.pem> ubuntu@<PUBLIC_IP>`
+
+![img_35.png](img_35.png) Permission was denied when I tried to ssh the first instance.
+When I tried to log into the AWS console, I saw there is no key pair associated with my instances, so that I cannot connect to the instance through SSH.
+Modify the python script to associate a key pair when creating instances.
