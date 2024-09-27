@@ -21,6 +21,17 @@ def wait_for_instance(instance_id):
         print(f"Instance {instance_id} is now running.")
     except ClientError as e:
         logging.error(e)
+
+def create_key_pair():
+    response = ec2.create_key_pair(
+        KeyName='23011392-key',
+        KeyType='rsa',
+        KeyFormat='pem'
+    )
+    file = open(f'23011392-key.pem','w')
+    file.write(response.get('KeyMaterial'))
+    file.close()
+
 def create_security_group():
     try:
         security_group = ec2.create_security_group(
@@ -34,14 +45,14 @@ def create_security_group():
             IpPermissions=[
                 {
                     'IpProtocol': 'tcp',
-                    'FromPort': 80,
-                    'ToPort': 80,
+                    'FromPort': 22,
+                    'ToPort': 22,
                     'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
                 },
                 {
                     'IpProtocol': 'tcp',
-                    'FromPort': 22,
-                    'ToPort': 22,
+                    'FromPort': 80,
+                    'ToPort': 80,
                     'IpRanges': [{'CidrIp': '0.0.0.0/0'}]
                 }
             ]
@@ -134,7 +145,7 @@ def create_listener(load_balancer_arn, target_group_arn):
         response = client.create_listener(
             LoadBalancerArn=load_balancer_arn,
             Protocol='HTTP',
-            Port=80,
+            Port=22,
             DefaultActions=[
                 {
                     'Type': 'forward',
@@ -150,6 +161,8 @@ def create_listener(load_balancer_arn, target_group_arn):
         return None
 
 def main():
+
+    # create_key_pair()
     security_group_id = create_security_group()
     if not security_group_id:
         return

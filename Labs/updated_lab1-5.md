@@ -1,4 +1,4 @@
-﻿<div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh;">
+<div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh;">
 
   <h2>Labs 1-5</h2>
   
@@ -15,14 +15,16 @@
 
 Starting by opening the URL provided in lab sheet 1, input the account and password as mentioned in the email. After logining
 into the home page, change the password of my account immediately.
-![img.png](img.png)
+<img src="img.png" alt="img.png" width="300">
+
 
 ### [2] Search and open Identity Access Management
 
 By following the instruction and open the Security Credentials tab under my user account, and obtained my Access Key ID and
 the secret access key.
 
-![img3.png](img3.png)
+<img src="images/img3.png" alt="img3.png" width="300">
+
 ## Set up recent Linux OSes
 
 My Operating System is macOS, so I use UTM as the virtual machine for booting Ubuntu.
@@ -32,7 +34,8 @@ Linux VM has already been set up in my UTM, I don't need to re-install it.
 
 ### [1] Install Python 3.8.x
 
-![img_1.png](img_1.png)
+<img src="images/img_1.png" alt="img_1.png" width="300">
+
 ```bash
 python3
 ```
@@ -44,9 +47,11 @@ by using the following command:
 ```bash
 aws --version
 ```
-![img_2.png](img_2.png)
+<img src="images/img_2.png" alt="img_2.png" width="300">
+
 ### [3] Configure AWS
-![IMG_1384.jpeg](IMG_1384.jpeg)
+<img src="images/IMG_1384.jpeg" alt="IMG_1384.jpeg" width="300">
+
 Input both the access keys obtained from Section [2] Search and open Identity Access Management, since my student number is
 22984000 – 23370000, ap-northeast-1 would be my Region Name.
 
@@ -58,7 +63,8 @@ pip show boto3
 ```
 After running the command, boto3 had been successfully installed, 
 using the second command to check whether it had been installed.
-![img_4.png](img_4.png)
+<img src="img_4.png" alt="img_4.png" width="300">
+
 
 ## Test the installed environment
 
@@ -74,7 +80,8 @@ RegionName </span>as columns.
 * **OptInStatus**: Indicates whether the region requires opt-in for access. In this case no opt-in is needed;
 * **RegionName**: The name of the AWS region.
 
-![img_3.png](img_3.png)
+<img src="images/img_3.png" alt="img_3.png" width="300">
+
 ### [2] Test the Python environment
 
 The script for testing python env used boto3 to create a client object for the EC2 service, and interact with EC2.
@@ -86,7 +93,8 @@ A list of dictionaries, each representing an AWS region, same as the previous ta
 #### **ResponseMetaData**:
 Metadata about the API request.
   
-![img_5.png](img_5.png)
+<img src="images/img_5.png" alt="img_5.png" width="300">
+
 ### [3] Write a Python script
 
 The task only requires 2 columns, <span style="font-family: Courier;"> Endpoint, RegionName </span>, using Python's Pandas
@@ -113,7 +121,8 @@ print(df)  # Print the tabulated data.
 
 The output: 
 
-![img_6.png](img_6.png)
+<img src="images/img_6.png" alt="img_6.png" width="300">
+
 <div style="page-break-after: always;"></div>
 
 # Lab 2
@@ -126,14 +135,16 @@ into the terminal of Ubuntu
 - `23011392-sg`: The security group name that AWS created for me.
 - `sg-03d9eeab7a30845e7`: The security group ID I received. 
 
-![img_7.png](img_7.png)
+<img src="images/img_7.png" alt="img_7.png" width="300">
+
 
 ### [2] Authorise inbound traffic for ssh
 
 Type in the command `aws ec2 authorize-security-group-ingress --group-name 23011392-sg --protocol tcp --port 22 --cidr 0.0.0.0/0`
 - `"Return": true`: indicating that authorization was successful;
 - `"SecurityGroupRules":[...]`: With a security group rule ID: "sgr-0b75b60eeee767008".
-![img_8.png](img_8.png)
+<img src="img_8.png" alt="img_8.png" width="300">
+
 
 ### [3] Create a key pair
 ```bash
@@ -225,11 +236,13 @@ Besides the welcome message, I also received some system information confirming 
 
 ### [8] List the created instance using the AWS console
 
-![img_9.png](img_9.png)
+<img src="images/img_9.png" alt="img_9.png" width="300">
+
 
 Starting by opening the web browser of AWS Management Console and go to the Instances under the Dashboard.
 
-![img_10.png](img_10.png)
+<img src="images/img_10.png" alt="img_10.png" width="300">
+
 
 ## Create an EC2 instance with Python Boto3
 
@@ -312,7 +325,8 @@ print(f"Public IP address: {public_ip}")
 sudo apt install docker.io -y
 ```
 
-![img_11.png](img_11.png)
+<img src="images/img_11.png" alt="img_11.png" width="300">
+
 
 The image illustrates that Docker has been installed in my VM, with the newest version(24.0.7)
 
@@ -333,22 +347,27 @@ After running previous 3 commands, Docker has been successfully installed and en
 
 Create two files according to the lab sheet:
 
-![img_13.png](img_13.png)
+<img src="images/img_13.png" alt="img_13.png" width="300">
+
 
 
 A permission error raised, try `sudo usermod -a -G docker <username>` and rebuild the docker image using `docker build -t my-apache2 .`: 
-![img_14.png](img_14.png)
-![img_15.png](img_15.png)
+<img src="img_14.png" alt="img_14.png" width="300">
+
+<img src="images/img_15.png" alt="img_15.png" width="300">
+
 
 Since I am using PyCharm's SSH linking to my VM, I typed `exit` in the terminal to logout of SSH and logged back in using
 `ssh stream@<my_vmserver_ip>`
 
 After that, after running the image using `docker run -p 80:80 -dit --name my-app my-apache2` and open the browser with URL for my VM's IP, the following 
 page has been displayed. 
-![img_16.png](img_16.png)
+<img src="img_16.png" alt="img_16.png" width="300">
+
 
 ### [6] Other docker commands
-![img_17.png](img_17.png)
+<img src="images/img_17.png" alt="img_17.png" width="300">
+
 By running `docker ps -a`, I there are a bunch of information I can gather:
 - Container ID: e3e2cf9c58f8
 - Image: my-apache2
@@ -358,10 +377,12 @@ By running `docker ps -a`, I there are a bunch of information I can gather:
 - Names: The container is named my-app
 
 After the container is stopped, the status of it became <span style="font-family: Courier;"> Exited </span>
-![img_18.png](img_18.png)
+<img src="img_18.png" alt="img_18.png" width="300">
+
 
 Same as removing the container, after removing the container it will no longer be listed in the containers.
-![img_19.png](img_19.png)
+<img src="img_19.png" alt="img_19.png" width="300">
+
 
 # Lab 3
 
@@ -371,11 +392,14 @@ Same as removing the container, after removing the container it will no longer b
 Starting by creating a new dir named root dir, I created the `rootdir` dir under my default dir. 
 Create a file in it with the content `1\n2\n3\n4\n5\n`
 
-![img_20.png](img_20.png)
-![img_21.png](img_21.png)
+<img src="images/img_20.png" alt="img_20.png" width="300">
+
+<img src="images/img_21.png" alt="img_21.png" width="300">
+
 
 For the subdir and subfile, using the same command as above:
-![img_22.png](img_22.png)
+<img src="img_22.png" alt="img_22.png" width="300">
+
 
 ```python3
 import logging
@@ -471,7 +495,8 @@ prefix.
 In my main function, I changed the `ROOT_DIR` to the abs location of my `rootdir`, traversing the root directory and upload all the files 
 underneath it to S3 bucket. For success in uploading a message will be printed to the output. 
 
-![img_23.png](img_23.png)
+<img src="images/img_23.png" alt="img_23.png" width="300">
+
 
 The images shows that the files in the dirs have been successfully uploaded to my S3 bucket.
 ### [3] Restore from S3
@@ -646,7 +671,8 @@ stream@stream:~/CITS5503_Sem2/Labs/src$ aws dynamodb scan --table-name CloudFile
 }
 ```
 ## [6]
-![img_24.png](img_24.png)
+<img src="images/img_24.png" alt="img_24.png" width="300">
+
 # Lab 4
 
 ## Apply a policy to restrict permissions on bucket
@@ -716,7 +742,9 @@ After I used the AWS CLI command the output displays the policy I associated wit
 Actuallly there is no so-called folder1 or folder2 in my S3 bucket, to test whether the associating policy works, I will set the 
 policy associate to the rootdir and subdir I created in the previous lab.
 
-![img_25.png](img_25.png)![img_26.png](img_26.png)
+<img src="images/img_25.png" alt="img_25.png" width="300">
+<img src="images/img_26.png" alt="img_26.png" width="300">
+
 
 Same as the content in the AWS console, I found my bucket in the list and clicked on the `Permission` section as saw the bucket policy.
 
@@ -875,12 +903,14 @@ else:
 1. Starting by logging in to the AWS Management Console;
 2. Navigate to the AWS KMS service;
 3. Under the <span style="font-family: Courier;"> Customer managed keys </span> section I can see the key with my student id and its details.
-![img_27.png](img_27.png)
+<img src="img_27.png" alt="img_27.png" width="300">
+
 
 #### Permission Testing: 
 - In the console I can directly view and edit the key policy, I can also schedule key deletion.
 - Under "Cryptographic configuration" tab, the key usage contains both encrypt and decrypt. 
-- ![img_28.png](img_28.png)
+- <img src="images/img_28.png" alt="img_28.png" width="300">
+
 
 ### [3] Use the created KMS key for encryption/decryption
 ```python
@@ -993,7 +1023,9 @@ def main():
 if __name__ == '__main__':
     main()
 ```
-![img_29.png](img_29.png)![img_30.png](img_30.png)
+<img src="images/img_29.png" alt="img_29.png" width="300">
+<img src="images/img_30.png" alt="img_30.png" width="300">
+
 In my python script, I used function `get_kms_id()` to retrieve the KMS key using the alias. 
 I encrypted/decrypted files in my bucket by downloading them locally. At my local side, I add the suffix `.encrypted` / `.decrypted` to indicate
 the file that I want to encrypt/decrypt.
@@ -1108,10 +1140,13 @@ the file I want to encrypt/decrypt from my Amazon S3 bucket to my local dir. The
 bucket, and upload back to the bucket in their original paths.
 
 
-![img_31.png](img_31.png) ![img_32.png](img_32.png)
+<img src="images/img_31.png" alt="img_31.png" width="300">
+ <img src="images/img_32.png" alt="img_32.png" width="300">
+
 Delete relevant bucket.
 
-![img_33.png](img_33.png)
+<img src="images/img_33.png" alt="img_33.png" width="300">
+
 Schedule deletion for KMS.
 
 The differences between custom solution and KMS have multiple factors to consider:
@@ -1345,6 +1380,7 @@ Starting from ssh-ing two instances:
 - Find my key file, which is located in `/home/stream/23011392-key.pem`
 - ssh my instances by typing following commands `ssh -i <KEY_FILE.pem> ubuntu@<PUBLIC_IP>`
 
-![img_35.png](img_35.png) Permission was denied when I tried to ssh the first instance.
+<img src="images/img_35.png" alt="img_35.png" width="300">
+ Permission was denied when I tried to ssh the first instance.
 When I tried to log into the AWS console, I saw there is no key pair associated with my instances, so that I cannot connect to the instance through SSH.
 Modify the python script to associate a key pair when creating instances.
