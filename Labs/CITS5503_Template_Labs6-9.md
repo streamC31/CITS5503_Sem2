@@ -331,7 +331,39 @@ Starting from updating my script in step[3].
 
 # Lab 8
 
-<div style="page-break-after: always;"></div>
+## Set Up Python Environment
+Starting from installing pandas, numpy, jupyter notebook, and sagemaker.
 
+## Prepare SageMaker session
+
+![No such entity](img_28.png)
+
+The first time I execute the Jupyter Notebook script and a NoSuchEntity exception raised, and I found in the IAM roles there 
+is no role named `Role_AWS_SageMaker`. So I viewed the role list and found the closest one: `SageMakerRole`.
+
+## Download Dataset
+
+Answer the following questions:
+    - Which variables are categorical?
+Categorical variables are usually non-numerical and represent catagory labels: `job`, `marital`, `education`, `default`, `housing`, 
+`loan`, `contact`, `month`, `day_of_week`, `poutcome`, `y`
+    - Which ones are numerical?
+Continuous or discrete numbers in the dataset: `age`, `duration`, `campaign`, `pdays`, `previous`, `emp.var.rate`, `cons.price.idx`, 
+`cons.conf.idx`, `euribor3m`, `nr.employed`.
+
+```python
+boto3.Session().resource("s3").Bucket(bucket).Object(
+    os.path.join(prefix, "train/train.csv")
+).upload_file("train.csv")
+boto3.Session().resource("s3").Bucket(bucket).Object(
+    os.path.join(prefix, "validation/validation.csv")
+).upload_file("validation.csv")
+```
+
+In this python script, it uploads the training and validation file into my S3 bucket.
+
+![train.csv inside the bucket](img_29.png)
+
+![validation.csv inside the bucket](img_30.png)
 # Lab 9
 
