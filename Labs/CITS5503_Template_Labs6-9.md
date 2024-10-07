@@ -321,7 +321,7 @@ if __name__ == '__main__':
     setup_nginx(c)
 ```
 
-### Step[4]
+### Step[4] Use Fabric for Automation
 
 Starting from updating my script in step[3].
 
