@@ -239,6 +239,10 @@ public_ip = response['Reservations'][0]['Instances'][0]['PublicIpAddress']
 print(f"Instance created with ID: {instance_id}")
 print(f"Public IP address: {public_ip}")
 ```
+
+Noted that in the creation of the new EC2 instance, the security group must be allowed for inbound traffic for either ports.
+Or it won't be access for the Django app in the following step.
+
 ### [Step 2] Install and configure Fabric on your VM
 
 Starting from installing fabric via the command `pip install fabric`, and create a config file inside "~/.ssh":
@@ -269,65 +273,135 @@ Last, test the following python code locally, successfully output "Linux":
 
 ```python
 import io
-
 from fabric import Connection
 
+EC2_HOST = '52.199.197.18'
+KEY_FILE = '../23011392-key.pem'
 
-c = Connection('23011392-vm1')
 
+def setup_django_app():
+    c = Connection(EC2_HOST, user='ubuntu', connect_kwargs={"key_filename": KEY_FILE})
 
-def setup_nginx(c):
-    """"""
-
-    # Update the packet list
+    # Update and upgrade
     c.sudo('apt-get update')
+    c.sudo('apt-get upgrade -y')
 
-    # Install nginx
-    c.sudo('apt-get install -y nginx')
+    # Try to fix broken packages
+    c.sudo('apt --fix-broken install')
 
-    # Start nginx service
-    c.sudo('systemctl start nginx')
+    # Try to install python3-venv
+    try:
+        c.sudo('apt-get install -y python3-venv')
+    except:
+        try:
+            c.sudo('apt install -y python3-venv')
+        except:
+            print("Failed to install python3-venv. Proceeding without explicit installation.")
 
-    # Enable nginx to start on boot
-    c.sudo('systemctl enable nginx')
+    # The rest of your function remains the same
+    # Step 3: Create and access directory
+    c.sudo('mkdir -p /opt/wwc/mysites')
+    c.sudo('chown ubuntu:ubuntu /opt/wwc/mysites')
 
-    # Configure nginx
+    with c.cd('/opt/wwc/mysites'):
+        # Step 4: Set up virtual environment
+        c.run('python3 -m venv myvenv')
+
+        # Step 5: Activate virtual environment and set up Django
+        c.run('source myvenv/bin/activate && pip install django')
+        c.run('source myvenv/bin/activate && django-admin startproject lab')
+        c.run('cd lab && source ../myvenv/bin/activate && python3 manage.py startapp polls')
+
+    # Step 6: Install nginx
+    c.sudo('apt install nginx -y')
+
+    # Step 7: Configure nginx
     nginx_config = '''
-       server {
-          listen 80 default_server;
-          listen [::]:80 default_server;
-        
-          location / {
-            proxy_set_header X-Forwarded-Host $host;
-            proxy_set_header X-Real-IP $remote_addr;
-        
-            proxy_pass http://127.0.0.1:8000;
-          }
-        }
-       '''
+server {
+  listen 80 default_server;
+  listen [::]:80 default_server;
 
-    # Write the nginx configuration
-    config_file = io.StringIO(nginx_config)
-    c.put(config_file, '/tmp/nginx_config')
+  location / {
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+
+    proxy_pass http://127.0.0.1:8000;
+  }
+}
+'''
+    c.put(io.StringIO(nginx_config), '/tmp/nginx_config')
     c.sudo('mv /tmp/nginx_config /etc/nginx/sites-available/default')
 
-    # Restart nginx to apply changes
-    c.sudo('systemctl restart nginx')
+    # Step 8: Restart nginx
+    c.sudo('service nginx restart')
 
-    print("Nginx has been installed and configured.")
+    # Set up Django inside the created EC2 instance
+    # Step 1: Edit Django files
+    polls_views = '''
+from django.http import HttpResponse
+
+def index(request):
+    return HttpResponse("Hello, world.")
+'''
+    c.put(io.StringIO(polls_views), '/opt/wwc/mysites/lab/polls/views.py')
+
+    polls_urls = '''
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('', views.index, name='index'),
+]
+'''
+    c.put(io.StringIO(polls_urls), '/opt/wwc/mysites/lab/polls/urls.py')
+
+    lab_urls = '''
+from django.urls import include, path
+from django.contrib import admin
+
+urlpatterns = [
+    path('polls/', include('polls.urls')),
+    path('admin/', admin.site.urls),
+]
+'''
+    c.put(io.StringIO(lab_urls), '/opt/wwc/mysites/lab/lab/urls.py')
 
 
-if __name__ == '__main__':
-    setup_nginx(c)
+
+if __name__ == "__main__":
+    setup_django_app()
 ```
 
-### Step[4] Use Fabric for Automation
+To automate the process in Lab 6, I first used `fabric.Connection` object to establish a connection to my remote 
+EC2 instance, using my instance's public IP address and the key file stored in my local machine.
 
-Starting from updating my script in step[3].
+After the connection is established, I ran essential system update and upgrade commands.
+
+I used a nested block of `try-except` to handle packet installation process of `python3-venv`, which is needed to create
+python venv. 
+
+Then, I used `c.sudo('mkdir -p /opt/wwc/mysites')` to create the directory for project files. After that, I activated the 
+virtual environment in the directory and install Django, and create a Django project named `lab` and a new app `polls` inside
+it. `c.run('source myvenv/bin/activate && django-admin startproject lab')
+c.run('cd lab && source ../myvenv/bin/activate && python3 manage.py startapp polls')
+`.
+
+After the Django app structure is set up, I attempted to set up Nginx, along with to configure. I created a temporary file in
+the dir `/tmp/nginx_config` and write the configure in it, and move the content into `/etc/nginx/sites-available/default`.
+
+Next, same to Lab 6, I used the code to modify: `polls/urls.py`, `polls/views.py`, and `lab/urls.py`.
+
+After all, I can successfully run the automated installed and configured project by SSH into my EC2 instance, `cd` into the 
+directory and activate the virtual environment, and type in `python3 manage.py runserver 8000` command.
+
+I accessed the "http://<ec2 instance url>/polls/" and found the following page, indicates that my automation setup of 
+Django app was successful.
 
 ![Fabric Transfer File](img_26.png)
 
 ![Command Line Task](img_27.png)
+
+![Automation python script worked](img_39.png)
 
 # Lab 8
 

@@ -1,77 +1,98 @@
-import boto3
+import io
+from fabric import Connection
 
-# Create AWS Rekognition client
-rekognition = boto3.client('rekognition', region_name='ap-northeast-1')
-
-
-def detect_labels(bucket_name, image_name):
-    """
-    Detect labels in an image stored in an S3 bucket.
-    """
-    response = rekognition.detect_labels(Image={'S3Object': {'Bucket': bucket_name, 'Name': image_name}}, MaxLabels=10)
-    print(f"Detected labels in {image_name}:")
-    for label in response['Labels']:
-        print(f"Label: {label['Name']}, Confidence: {label['Confidence']:.2f}%")
-    print()
+EC2_HOST = '52.199.197.18'
+KEY_FILE = '../23011392-key.pem'
 
 
-def moderate_image(bucket_name, image_name):
-    """
-    Detect if an image contains inappropriate content using AWS Rekognition.
-    """
-    response = rekognition.detect_moderation_labels(Image={'S3Object': {'Bucket': bucket_name, 'Name': image_name}})
-    print(f"Moderation labels for {image_name}:")
-    if response['ModerationLabels']:
-        for label in response['ModerationLabels']:
-            print(f"Label: {label['Name']}, Confidence: {label['Confidence']:.2f}%")
-    else:
-        print(f"No inappropriate content found in {image_name}.")
-    print()
+def setup_django_app():
+    c = Connection(EC2_HOST, user='ubuntu', connect_kwargs={"key_filename": KEY_FILE})
+
+    # Update and upgrade
+    c.sudo('apt-get update')
+    c.sudo('apt-get upgrade -y')
+
+    # Try to fix broken packages
+    c.sudo('apt --fix-broken install')
+
+    # Try to install python3-venv
+    try:
+        c.sudo('apt-get install -y python3-venv')
+    except:
+        try:
+            c.sudo('apt install -y python3-venv')
+        except:
+            print("Failed to install python3-venv. Proceeding without explicit installation.")
+
+    # The rest of your function remains the same
+    # Step 3: Create and access directory
+    c.sudo('mkdir -p /opt/wwc/mysites')
+    c.sudo('chown ubuntu:ubuntu /opt/wwc/mysites')
+
+    with c.cd('/opt/wwc/mysites'):
+        # Step 4: Set up virtual environment
+        c.run('python3 -m venv myvenv')
+
+        # Step 5: Activate virtual environment and set up Django
+        c.run('source myvenv/bin/activate && pip install django')
+        c.run('source myvenv/bin/activate && django-admin startproject lab')
+        c.run('cd lab && source ../myvenv/bin/activate && python3 manage.py startapp polls')
+
+    # Step 6: Install nginx
+    c.sudo('apt install nginx -y')
+
+    # Step 7: Configure nginx
+    nginx_config = '''
+server {
+  listen 80 default_server;
+  listen [::]:80 default_server;
+
+  location / {
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+
+    proxy_pass http://127.0.0.1:8000;
+  }
+}
+'''
+    c.put(io.StringIO(nginx_config), '/tmp/nginx_config')
+    c.sudo('mv /tmp/nginx_config /etc/nginx/sites-available/default')
+
+    # Step 8: Restart nginx
+    c.sudo('service nginx restart')
+
+    # Set up Django inside the created EC2 instance
+    # Step 1: Edit Django files
+    polls_views = '''
+from django.http import HttpResponse
+
+def index(request):
+    return HttpResponse("Hello, world.")
+'''
+    c.put(io.StringIO(polls_views), '/opt/wwc/mysites/lab/polls/views.py')
+
+    polls_urls = '''
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    path('', views.index, name='index'),
+]
+'''
+    c.put(io.StringIO(polls_urls), '/opt/wwc/mysites/lab/polls/urls.py')
+
+    lab_urls = '''
+from django.urls import include, path
+from django.contrib import admin
+
+urlpatterns = [
+    path('polls/', include('polls.urls')),
+    path('admin/', admin.site.urls),
+]
+'''
+    c.put(io.StringIO(lab_urls), '/opt/wwc/mysites/lab/urls.py')
 
 
-def detect_faces(bucket_name, image_name):
-    """
-    Detect faces and facial attributes in an image using AWS Rekognition.
-    """
-    response = rekognition.detect_faces(Image={'S3Object': {'Bucket': bucket_name, 'Name': image_name}},
-                                        Attributes=['ALL'])
-    print(f"Detected faces in {image_name}:")
-    for face_detail in response['FaceDetails']:
-        print(f"Confidence: {face_detail['Confidence']:.2f}%")
-        print(f"Age range: {face_detail['AgeRange']['Low']} - {face_detail['AgeRange']['High']}")
-        print(f"Gender: {face_detail['Gender']['Value']} (Confidence: {face_detail['Gender']['Confidence']:.2f}%)")
-        print(f"Emotions: {[emotion['Type'] for emotion in face_detail['Emotions'] if emotion['Confidence'] > 50]}")
-        print()
-    if not response['FaceDetails']:
-        print(f"No faces detected in {image_name}.")
-    print()
 
-
-def detect_text(bucket_name, image_name):
-    """
-    Detect and extract text from an image using AWS Rekognition.
-    """
-    response = rekognition.detect_text(Image={'S3Object': {'Bucket': bucket_name, 'Name': image_name}})
-    print(f"Detected text in {image_name}:")
-    if response['TextDetections']:
-        for text in response['TextDetections']:
-            print(f"Detected: {text['DetectedText']}, Confidence: {text['Confidence']:.2f}%")
-    else:
-        print(f"No text found in {image_name}.")
-    print()
-
-
-if __name__ == '__main__':
-    student_id = '23011392'
-    bucket_name = f'{student_id}-lab9'
-
-    # List of images to test
-    images = ['urban.jpg', 'beach.jpg', 'faces.jpg', 'text.jpg']
-
-    # Test each image using AWS Rekognition
-    for image in images:
-        # print(f"--- Processing {image} ---")
-        #
-        # # Detect text (only applicable for 'text.jpg')
-        if image == 'text.jpg':
-            detect_text(bucket_name, image)
+if __name__ == "__main__":
+    setup_django_app()
